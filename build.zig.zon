@@ -1,0 +1,28 @@
+.{
+    .name = .zaylib,
+    .fingerprint = 0xff50dc31b7db5ef8,
+
+    // This is a [Semantic Version](https://semver.org/).
+    .version = "0.0.0",
+
+    //.minimum_zig_version = "0.11.0",
+
+    .dependencies = .{
+        .raylib_zig = .{
+            .url = "git+https://github.com/Not-Nik/raylib-zig#d6c77762cbdebbf56d3ff101142048dfae2496c4",
+            .hash = "raylib_zig-5.6.0-dev-KE8REBMyBQCnQ9RBhHsoSKr97XmDHF84wx3g0UiMRDxj",
+        },
+        .zbullet = .{
+            .url = "git+https://github.com/zig-gamedev/zbullet/#d06cd11597df40dce1b1cfb9ce37f2550282c905",
+            .hash = "zbullet-0.4.0-dev-7gkXjxSUQAAPHyjt3yx7X_JMLFeCqSMu5QgrUBrVds6-",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        // For example...
+        //"LICENSE",
+        //"README.md",
+    },
+}
