@@ -15,7 +15,6 @@ fn init_camera() rl.Camera3D {
     return camera;
 }
 
-/// Helper function to translate raylib transforms to physics engine transforms
 fn vec3_arr(vec: Vector3) *const [3]f32 {
     const arr = [_]f32{ vec.x, vec.y, vec.z };
     return &arr;
@@ -31,39 +30,57 @@ pub fn main() anyerror!void {
 
     defer {
         const deinit_status = gpa.deinit();
-        //fail test; can't try in defer as defer is executed after we return
         if (deinit_status == .leak) std.testing.expect(false) catch @panic("TEST FAIL");
     }
 
     zbt.init(allocator);
-    const world = zbt.initWorld();
-    defer {
-        zbt.deinit();
-        world.deinit();
-    }
+    defer zbt.deinit();
+    const physics_world = zbt.initWorld();
+    defer physics_world.deinit();
+    const default_gravity: f32 = 10.0;
+    physics_world.setGravity(&.{ 0.0, -default_gravity, 0.0 });
 
     const camera = init_camera();
 
-    var cube_pos = Vector3.init(0.0, 1.0, 0.0);
-    const cube_size = Vector3.init(2.0, 2.0, 2.0);
+    var floor_pos = Vector3.init(0.0, 3.0, 0.0);
+    const floor_size = Vector3.init(5.0, 0.5, 5.0);
+    const floor_shape = zbt.initBoxShape(vec3_arr(floor_size));
+    defer floor_shape.deinit();
 
+    var cube_starting_pos = Vector3.init(0.0, 5.0, 0.0);
+    const cube_size = Vector3.init(2.0, 2.0, 2.0);
     const physics_box_shape = zbt.initBoxShape(vec3_arr(cube_size));
     defer physics_box_shape.deinit();
     // Create rigid body that will use above shape.
-    const initial_transform = [_]f32{
+    const cube_initial_transform = [_]f32{
+        1.0,                 0.0,                 0.0, // orientation
+        0.0,                 1.0,                 0.0,
+        0.0,                 0.0,                 1.0,
+        cube_starting_pos.x, cube_starting_pos.y, cube_starting_pos.z,
+    };
+    const cube_body = zbt.initBody(
+        1.0, // mass (0.0 for static objects)
+        &cube_initial_transform,
+        physics_box_shape.asShape(),
+    );
+    defer cube_body.deinit();
+    physics_world.addBody(cube_body);
+    defer physics_world.removeBody(cube_body);
+
+    const floor_initial_transform = [_]f32{
         1.0, 0.0, 0.0, // orientation
         0.0, 1.0, 0.0,
         0.0, 0.0, 1.0,
-        0.0, 1.0, 0.0, // translation SAME AS `cube_pos`
+        0.0, 0.0, 0.0,
     };
-    const box_body = zbt.initBody(
-        1.0, // mass (0.0 for static objects)
-        &initial_transform,
-        physics_box_shape.asShape(),
-    );
-    defer box_body.deinit();
-    world.addBody(box_body);
-    defer world.removeBody(box_body);
+    var floor_body = zbt.initBody(0.0, &floor_initial_transform, floor_shape.asShape());
+    // floor_body.setActivationState(.active);
+    // floor_body.setCollisionFlags(.{
+    //     .static_object = true,
+    // });
+    defer floor_body.deinit();
+    physics_world.addBody(floor_body);
+    defer physics_world.removeBody(floor_body);
 
     rl.initWindow(screenWidth, screenHeight, "raylib-zig [core] example - basic window");
     defer rl.closeWindow(); // Close window and OpenGL context
@@ -71,55 +88,48 @@ pub fn main() anyerror!void {
     rl.setTargetFPS(60); // Set our game to run at 60 frames-per-second
     //--------------------------------------------------------------------------------------
 
+    std.log.warn("{} BODIES\n", .{physics_world.getNumBodies()});
     // Main game loop
     while (!rl.windowShouldClose()) {
-        const dt = rl.getFrameTime();
-        // Detect window close button or ESC key
         // Update
         //----------------------------------------------------------------------------------
-        _ = world.stepSimulation(dt, .{});
+        const dt = rl.getFrameTime();
+        _ = physics_world.stepSimulation(dt, .{});
+        physics_world.debugDrawAll();
 
-        const cube_body = world.getBody(0);
-        var transform: [12]f32 = undefined;
-        cube_body.getGraphicsWorldTransform(&transform);
-        cube_pos.x = transform[9];
-        cube_pos.y = transform[10];
-        cube_pos.z = transform[11];
-
-        //----------------------------------------------------------------------------------
+        {
+            const cube = physics_world.getBody(0);
+            var transform: [12]f32 = undefined;
+            cube.getGraphicsWorldTransform(&transform);
+            cube_starting_pos.x = transform[9];
+            cube_starting_pos.y = transform[10];
+            cube_starting_pos.z = transform[11];
+        }
+        {
+            const floor = physics_world.getBody(1);
+            var transform: [12]f32 = undefined;
+            floor.getGraphicsWorldTransform(&transform);
+            floor_pos.x = transform[9];
+            floor_pos.y = transform[10];
+            floor_pos.z = transform[11];
+        }
 
         // Draw
         //----------------------------------------------------------------------------------
         rl.beginDrawing();
         defer rl.endDrawing();
-
         rl.clearBackground(rl.Color.ray_white);
+        {
+            rl.beginMode3D(camera);
+            defer rl.endMode3D();
 
-        rl.beginMode3D(camera);
+            rl.drawCube(cube_starting_pos, cube_size.x, cube_size.y, cube_size.z, rl.Color.gray);
+            rl.drawCubeWires(cube_starting_pos, cube_size.x, cube_size.y, cube_size.z, rl.Color.dark_gray);
 
-        // if (collision.hit) {
-        //     rl.drawCube(cubePosition, cubeSize.x, cubeSize.y, cubeSize.z, RED);
-        //     rl.drawCubeWires(cubePosition, cubeSize.x, cubeSize.y, cubeSize.z, MAROON);
-
-        //     rl.drawCubeWires(cubePosition, cubeSize.x + 0.2f, cubeSize.y + 0.2f, cubeSize.z + 0.2f, GREEN);
-        // } else {
-        rl.drawCube(cube_pos, cube_size.x, cube_size.y, cube_size.z, rl.Color.gray);
-        rl.drawCubeWires(cube_pos, cube_size.x, cube_size.y, cube_size.z, rl.Color.dark_gray);
-        // }
-
-        // rl.drawRay(ray, MAROON);
-        rl.drawGrid(10, 1.0);
-
-        rl.endMode3D();
-
-        rl.drawText("Try clicking on the box with your mouse!", 240, 10, 20, rl.Color.dark_gray);
-
-        // if (collision.hit) rl.drawText("BOX SELECTED", (screenWidth - rl.measureText("BOX SELECTED", 30)) / 2, (int)(screenHeight * 0.1f), 30, GREEN);
-
-        rl.drawText("Right click mouse to toggle camera controls", 10, 430, 10, rl.Color.gray);
+            rl.drawCube(floor_pos, floor_size.x, floor_size.y, floor_size.z, rl.Color.black);
+            rl.drawCubeWires(floor_pos, floor_size.x, floor_size.y, floor_size.z, rl.Color.red);
+        }
 
         rl.drawFPS(10, 10);
-
-        //
     }
 }
