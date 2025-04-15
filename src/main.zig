@@ -44,12 +44,12 @@ pub fn main() anyerror!void {
 
     var floor_pos = Vector3.init(0.0, 3.0, 0.0);
     const floor_size = Vector3.init(5.0, 0.5, 5.0);
-    const floor_shape = zbt.initBoxShape(vec3_arr(floor_size));
+    const floor_shape = zbt.initBoxShape(&[_]f32{ 5.0, 0.5, 5.0 });
     defer floor_shape.deinit();
 
     var cube_starting_pos = Vector3.init(0.0, 5.0, 0.0);
     const cube_size = Vector3.init(2.0, 2.0, 2.0);
-    const physics_box_shape = zbt.initBoxShape(vec3_arr(cube_size));
+    const physics_box_shape = zbt.initBoxShape(&[_]f32{ 2.0, 2.0, 2.0 });
     defer physics_box_shape.deinit();
     // Create rigid body that will use above shape.
     const cube_initial_transform = [_]f32{
