@@ -15,11 +15,6 @@ fn init_camera() rl.Camera3D {
     return camera;
 }
 
-fn vec3_arr(vec: Vector3) *const [3]f32 {
-    const arr = [_]f32{ vec.x, vec.y, vec.z };
-    return &arr;
-}
-
 pub fn main() anyerror!void {
     // Initialization
     //--------------------------------------------------------------------------------------
@@ -88,6 +83,17 @@ pub fn main() anyerror!void {
     rl.setTargetFPS(60); // Set our game to run at 60 frames-per-second
     //--------------------------------------------------------------------------------------
 
+    var ray = rl.Ray{
+        .position = Vector3.zero(),
+        .direction = Vector3.zero(),
+    }; // Picking line ray
+    var collision = rl.RayCollision{
+        .hit = false,
+        .distance = 0.0,
+        .point = Vector3.zero(),
+        .normal = Vector3.zero(),
+    };
+
     std.log.warn("{} BODIES\n", .{physics_world.getNumBodies()});
     // Main game loop
     while (!rl.windowShouldClose()) {
@@ -96,6 +102,14 @@ pub fn main() anyerror!void {
         const dt = rl.getFrameTime();
         _ = physics_world.stepSimulation(dt, .{});
         physics_world.debugDrawAll();
+
+        {
+            ray = rl.getScreenToWorldRay(rl.getMousePosition(), camera);
+            collision = rl.getRayCollisionBox(ray, rl.BoundingBox{
+                .min = Vector3.init(cube_starting_pos.x - cube_size.x / 2, cube_starting_pos.y - cube_size.y / 2, cube_starting_pos.z - cube_size.z / 2),
+                .max = Vector3.init(cube_starting_pos.x + cube_size.x / 2, cube_starting_pos.y + cube_size.y / 2, cube_starting_pos.z + cube_size.z / 2),
+            });
+        }
 
         {
             const cube = physics_world.getBody(0);
@@ -123,8 +137,12 @@ pub fn main() anyerror!void {
             rl.beginMode3D(camera);
             defer rl.endMode3D();
 
-            rl.drawCube(cube_starting_pos, cube_size.x, cube_size.y, cube_size.z, rl.Color.gray);
-            rl.drawCubeWires(cube_starting_pos, cube_size.x, cube_size.y, cube_size.z, rl.Color.dark_gray);
+            const cube_color, const wire_color = if (collision.hit)
+                [_]rl.Color{ rl.Color.green, rl.Color.red }
+            else
+                [_]rl.Color{ rl.Color.gray, rl.Color.light_gray };
+            rl.drawCube(cube_starting_pos, cube_size.x, cube_size.y, cube_size.z, cube_color);
+            rl.drawCubeWires(cube_starting_pos, cube_size.x, cube_size.y, cube_size.z, wire_color);
 
             rl.drawCube(floor_pos, floor_size.x, floor_size.y, floor_size.z, rl.Color.black);
             rl.drawCubeWires(floor_pos, floor_size.x, floor_size.y, floor_size.z, rl.Color.red);

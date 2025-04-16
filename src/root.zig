@@ -129,7 +129,89 @@ const PlayerState =
         }
     };
 
+const TimeOfDay =
+    enum {
+        morning,
+        noon,
+        afternoon,
+        evening,
+        night,
+
+        fn next(self: *@This()) void {
+            self.* = switch (self.*) {
+                .morning => .noon,
+                .noon => .afternoon,
+                .afternoon => .evening,
+                .evening => .night,
+                .night => .morning,
+            };
+        }
+
+        /// Does comptime time checks to ensure set Hours percentage total == 100
+        fn percent(self: @This()) f32 {
+            const morning: f32 = 0.1;
+            const noon: f32 = 0.4;
+            const afternoon: f32 = 0.2;
+            const evening: f32 = 0.2;
+            const night: f32 = 0.1;
+
+            comptime {
+                var p: f32 = 0.0;
+                for (.{ morning, noon, afternoon, evening, night }) |v| {
+                    p += v;
+                }
+                if (p != 1.0) {
+                    @compileError("Invalid Cycle Percentages");
+                }
+            }
+
+            return switch (self) {
+                .morning => morning,
+                .noon => noon,
+                .afternoon => afternoon,
+                .evening => evening,
+                .night => night,
+            };
+        }
+    };
+
+fn DayNight(comptime HoursInDay: f32) type {
+    return struct {
+        current_time: f32,
+        /// How many in-game hours should pass per real second
+        cycle_speed: f32,
+        time_of_day: TimeOfDay,
+
+        const Self = @This();
+
+        fn start(cycle_speed: f32) Self {
+            return Self{
+                .current_time = 0.0,
+                .cycle_speed = cycle_speed,
+                .time_of_day = .morning,
+            };
+        }
+
+        fn update(self: *Self, dt: f32) void {
+            self.current_time += dt * self.cycle_speed;
+
+            // if (self.current_time >= 1.0) {
+            //     self.current_time -= 1.0;
+            // }
+
+            const time_of_day = @mod(self.current_time + dt * self.cycle_speed, HoursInDay);
+
+            const current_tod_cutoff = HoursInDay * self.time_of_day.percent();
+
+            if (time_of_day >= current_tod_cutoff) {
+                self.time_of_day.next();
+            }
+        }
+    };
+}
+
 const GameState = struct {
+    time: DayNight(24),
     player: PlayerState,
     opposer: PlayerState,
 };
@@ -149,6 +231,23 @@ test "game state" {
 
     const player = try PlayerState.init_with_shuffle(&deck);
     const opposer = try PlayerState.init_with_shuffle(&deck);
-    const state = GameState{ .player = player, .opposer = opposer };
+    const state = GameState{ .time = DayNight(24).start(6.0), .player = player, .opposer = opposer };
     _ = state;
+}
+
+test "DayNight advances through time-of-day stages" {
+    const HOURS_IN_DAY: f32 = 24.0;
+    const DayCycle = DayNight(HOURS_IN_DAY);
+    var cycle = DayCycle.start(6.0); // 6 in-game hours per real second
+
+    // Simulate time passing with constant dt
+    const dt = 1.0; // 1 second per tick
+    const num_steps = 5;
+
+    for (0..num_steps) |i| {
+        std.debug.print("Tick {}: TOD = {}\n", .{ i, cycle.time_of_day });
+        cycle.update(dt);
+    }
+
+    try std.testing.expectEqual(cycle.time_of_day, .afternoon);
 }
