@@ -1,5 +1,6 @@
 const std = @import("std");
 const da = @import("dynamic_array.zig");
+const entity = @import("entity.zig");
 
 /// # Cloning Inscription
 /// ---

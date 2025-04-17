@@ -111,6 +111,13 @@ pub fn main() anyerror!void {
             });
         }
 
+        if (rl.isMouseButtonPressed(.left)) {
+            // const wts = rl.getWorldToScreen(rl.getMousePosition(), camera);
+            // const stw = rl.getScreenToWorldRay(rl.getMousePosition(), camera);
+            // const ray_hit = physics_world.rayTestClosest(wts, stw, zbt.CollisionFilter.all, zbt.CollisionFilter.all, zbt.RayCastFlags{}, zbt.RayCastResult);
+            // _ = ray_hit;
+        }
+
         {
             const cube = physics_world.getBody(0);
             var transform: [12]f32 = undefined;
