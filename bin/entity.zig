@@ -1,6 +1,7 @@
 const rl = @import("raylib");
 const std = @import("std");
 const zbt = @import("zbullet");
+const core = @import("engine_core");
 
 const Vector3 = rl.Vector3;
 
@@ -16,31 +17,44 @@ fn init_camera() rl.Camera3D {
 }
 
 pub fn main() anyerror!void {
-    // Initialization
-    //--------------------------------------------------------------------------------------
-    const screenWidth = 800;
-    const screenHeight = 450;
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
-
     defer {
         const deinit_status = gpa.deinit();
         if (deinit_status == .leak) std.testing.expect(false) catch @panic("TEST FAIL");
     }
+    std.log.warn("INITIALIZED ALLOCATOR\n", .{});
 
+    const screenWidth = 800;
+    const screenHeight = 450;
+    rl.initWindow(screenWidth, screenHeight, "raylib-zig [core] example - basic window");
+    defer rl.closeWindow(); // Close window and OpenGL context
+    rl.setTargetFPS(60); // Set our game to run at 60 frames-per-second
+
+    // World Setup
+    //---
     zbt.init(allocator);
     defer zbt.deinit();
-    const physics_world = zbt.initWorld();
+    var physics_world = zbt.initWorld();
     defer physics_world.deinit();
     const default_gravity: f32 = 10.0;
     physics_world.setGravity(&.{ 0.0, -default_gravity, 0.0 });
 
+    // Camera
+    //---
     const camera = init_camera();
 
-    var floor_pos = Vector3.init(0.0, 3.0, 0.0);
-    const floor_size = Vector3.init(5.0, 0.5, 5.0);
-    const floor_shape = zbt.initBoxShape(&[_]f32{ 5.0, 0.5, 5.0 });
-    defer floor_shape.deinit();
+    var floor_ent = floor_ent: {
+        const mesh =
+            rl.genMeshPlane(10.0, 10.0, 1, 1);
+        const shape = zbt.initBoxShape(&[_]f32{ 10.0, 0.2, 10.0 });
+        const transform = rl.Matrix.identity();
+        const material = try rl.loadMaterialDefault();
+
+        break :floor_ent core.entity.Entity{ .material = material, .mesh = mesh, .shape = shape.asShape(), .mass = 0.0, .transform = transform };
+    };
+    defer floor_ent.deinit();
+    std.log.warn("INIT FLOOR ENT\n", .{});
 
     var cube_starting_pos = Vector3.init(0.0, 5.0, 0.0);
     const cube_size = Vector3.init(2.0, 2.0, 2.0);
@@ -61,27 +75,13 @@ pub fn main() anyerror!void {
     defer cube_body.deinit();
     physics_world.addBody(cube_body);
     defer physics_world.removeBody(cube_body);
+    std.log.warn("ADDED CUBE\n", .{});
 
-    const floor_initial_transform = [_]f32{
-        1.0, 0.0, 0.0, // orientation
-        0.0, 1.0, 0.0,
-        0.0, 0.0, 1.0,
-        0.0, 0.0, 0.0,
-    };
-    var floor_body = zbt.initBody(0.0, &floor_initial_transform, floor_shape.asShape());
-    // floor_body.setActivationState(.active);
-    // floor_body.setCollisionFlags(.{
-    //     .static_object = true,
-    // });
+    const floor_body = floor_ent.physics_body();
     defer floor_body.deinit();
     physics_world.addBody(floor_body);
     defer physics_world.removeBody(floor_body);
-
-    rl.initWindow(screenWidth, screenHeight, "raylib-zig [core] example - basic window");
-    defer rl.closeWindow(); // Close window and OpenGL context
-
-    rl.setTargetFPS(60); // Set our game to run at 60 frames-per-second
-    //--------------------------------------------------------------------------------------
+    std.log.warn("ADDED FLOOR\n", .{});
 
     var ray = rl.Ray{
         .position = Vector3.zero(),
@@ -130,9 +130,9 @@ pub fn main() anyerror!void {
             const floor = physics_world.getBody(1);
             var transform: [12]f32 = undefined;
             floor.getGraphicsWorldTransform(&transform);
-            floor_pos.x = transform[9];
-            floor_pos.y = transform[10];
-            floor_pos.z = transform[11];
+            floor_ent.transform.m3 = transform[9];
+            floor_ent.transform.m7 = transform[10];
+            floor_ent.transform.m11 = transform[11];
         }
 
         // Draw
@@ -151,8 +151,8 @@ pub fn main() anyerror!void {
             rl.drawCube(cube_starting_pos, cube_size.x, cube_size.y, cube_size.z, cube_color);
             rl.drawCubeWires(cube_starting_pos, cube_size.x, cube_size.y, cube_size.z, wire_color);
 
-            rl.drawCube(floor_pos, floor_size.x, floor_size.y, floor_size.z, rl.Color.black);
-            rl.drawCubeWires(floor_pos, floor_size.x, floor_size.y, floor_size.z, rl.Color.red);
+            rl.drawMesh(floor_ent.mesh, floor_ent.material, floor_ent.transform);
+            // rl.drawCubeWires(floor_pos, floor_size.x, floor_size.y, floor_size.z, rl.Color.red);
         }
 
         rl.drawFPS(10, 10);
