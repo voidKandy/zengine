@@ -98,7 +98,6 @@ pub fn main() anyerror!void {
         // Update
         //----------------------------------------------------------------------------------
         const dt = rl.getFrameTime();
-        state.object_picking(false);
         _ = physics_world.stepSimulation(dt, .{});
         physics_world.debugDrawAll();
 

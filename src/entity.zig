@@ -1,8 +1,70 @@
 const rl = @import("raylib");
 const std = @import("std");
 const zbt = @import("zbullet");
+const core = @import("engine_core");
+const State = core.state.State;
 const Shape = zbt.Shape;
 
+const PhysicsSystem = System(
+    zbt.World,
+    struct { transform: rl.Matrix },
+    error{},
+    "physics",
+    struct {
+        fn ctx(state: State) error{}!zbt.World {
+            return state.physics.world;
+        }
+    }.ctx,
+    struct {
+        fn update(ctx: zbt.World) error{}!zbt.World {}
+    }.update,
+);
+// Should be moved to the State object
+pub fn System(
+    /// Essentially the *state* of the system
+    comptime Context: type,
+    comptime ComponentType: type,
+    comptime Error: type,
+    comptime Name: []const u8,
+    comptime getCtx: fn (state: State) Error!Context,
+    comptime updateFn: fn (ctx: Context, component: ComponentType) Error!void,
+) type {
+    // Component should allow users to make arbitrary things happen to it's
+    // connected Entity based on the state (ctx) of the system
+    return struct {
+        ctx: Context,
+
+        const Self = @This();
+
+        fn from_state(state: State) Error!Self {
+            const ctx = try getCtx(state);
+            return Self{ .ctx = ctx };
+        }
+
+        fn get_components(state: State) Error![]ComponentType {
+            // state.
+        }
+
+        fn update(self: Self) Error!void {
+            return updateFn(self.ctx);
+        }
+    };
+}
+
+pub const EntityStorage = struct {
+    // fn EntityComponent(comptime I: usize) type{
+    //     return struct {
+    //         entity_pointer: *Entity,
+    //         component: ComponentTypes[I],
+    //     };
+    // }
+    entities: std.ArrayList(Entity),
+    components: []struct { system_id: []const u8, id: u32, _t: type },
+
+    fn register_component(self: *@This(), comp: anytype) void {}
+};
+// pub const EntityStorage = struct {
+// };
 pub const Entity = struct {
     const MaterialTag = enum { color, material };
     pub const Material = union(MaterialTag) { color: (rl.Color), material: (rl.Material) };
@@ -20,6 +82,7 @@ pub const Entity = struct {
     /// | m2   m6   m10  m14 |   <- Z axis + translation Z
     /// | m3   m7   m11  m15 |   <- perspective row (typically 0 0 0 1)
     transform: rl.Matrix,
+
     const Self = @This();
 
     pub fn init(
