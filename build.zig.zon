@@ -16,6 +16,10 @@
             .url = "git+https://github.com/zig-gamedev/zbullet/#d06cd11597df40dce1b1cfb9ce37f2550282c905",
             .hash = "zbullet-0.4.0-dev-7gkXjxSUQAAPHyjt3yx7X_JMLFeCqSMu5QgrUBrVds6-",
         },
+        .zmath = .{
+            .url = "git+https://github.com/zig-gamedev/zmath.git#ccf7297ef6c01e21b2d51ad81b5b6ce929e86a00",
+            .hash = "zmath-0.11.0-dev-wjwivZY1AwDO7yxNmZ5HWoU03f9mFBet8LN9-oYc3i29",
+        },
     },
     .paths = .{
         "build.zig",

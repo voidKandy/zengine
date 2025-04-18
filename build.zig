@@ -10,10 +10,11 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    const raylib = raylib_dep.module("raylib"); // main raylib module
-    const raygui = raylib_dep.module("raygui"); // raygui module
-    const raylib_artifact = raylib_dep.artifact("raylib"); // raylib C library
+    const raylib = raylib_dep.module("raylib");
+    const raygui = raylib_dep.module("raygui");
+    const raylib_artifact = raylib_dep.artifact("raylib");
     const zbullet = b.dependency("zbullet", .{});
+    const zmath = b.dependency("zmath", .{});
 
     // Core Library
     // ---
@@ -21,6 +22,7 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("src/root.zig"),
     });
     engine_core_lib.addImport("zbullet", zbullet.module("root"));
+    engine_core_lib.addImport("zmath", zmath.module("root"));
     engine_core_lib.linkLibrary(zbullet.artifact("cbullet"));
     engine_core_lib.linkLibrary(raylib_artifact);
     engine_core_lib.addImport("raylib", raylib);
@@ -56,6 +58,7 @@ pub fn build(b: *std.Build) void {
         exe.root_module.addImport("zbullet", zbullet.module("root"));
         exe.linkLibrary(zbullet.artifact("cbullet"));
         exe.linkLibrary(raylib_artifact);
+        exe.root_module.addImport("zmath", zmath.module("root"));
         exe.root_module.addImport("raylib", raylib);
         exe.root_module.addImport("raygui", raygui);
         exe.root_module.addImport("engine_core", engine_core_lib);
@@ -75,6 +78,7 @@ pub fn build(b: *std.Build) void {
     lib_unit_tests.linkLibrary(zbullet.artifact("cbullet"));
     lib_unit_tests.linkLibrary(raylib_artifact);
     lib_unit_tests.root_module.addImport("raylib", raylib);
+    lib_unit_tests.root_module.addImport("zmath", zmath.module("root"));
     lib_unit_tests.root_module.addImport("raygui", raygui);
     lib_unit_tests.root_module.addImport("engine_core", engine_core_lib);
     const run_lib_unit_tests = b.addRunArtifact(lib_unit_tests);

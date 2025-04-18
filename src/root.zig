@@ -1,6 +1,7 @@
 const std = @import("std");
 pub const da = @import("dynamic_array.zig");
 pub const entity = @import("entity.zig");
+pub const state = @import("state.zig");
 
 /// # Cloning Inscription
 /// ---
@@ -232,8 +233,8 @@ test "game state" {
 
     const player = try PlayerState.init_with_shuffle(&deck);
     const opposer = try PlayerState.init_with_shuffle(&deck);
-    const state = GameState{ .time = DayNight(24).start(6.0), .player = player, .opposer = opposer };
-    _ = state;
+    const st = GameState{ .time = DayNight(24).start(6.0), .player = player, .opposer = opposer };
+    _ = st;
 }
 
 test "DayNight advances through time-of-day stages" {
