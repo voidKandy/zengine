@@ -3,14 +3,12 @@ const std = @import("std");
 const zbt = @import("zbullet");
 const Shape = zbt.Shape;
 
-const MaterialTag = enum { color, material };
-
-pub const EntityMaterial = union(MaterialTag) { color: (rl.Color), material: (rl.Material) };
-
 pub const Entity = struct {
+    const MaterialTag = enum { color, material };
+    pub const Material = union(MaterialTag) { color: (rl.Color), material: (rl.Material) };
     id: i32,
     mesh: rl.Mesh,
-    material: EntityMaterial,
+    material: Material,
     body: zbt.Body,
     /// Collision shape
     shape: Shape,
@@ -27,7 +25,7 @@ pub const Entity = struct {
     pub fn init(
         world: zbt.World,
         mesh: rl.Mesh,
-        material: EntityMaterial,
+        material: Material,
         shape: Shape,
         mass: f32,
         transform: rl.Matrix,

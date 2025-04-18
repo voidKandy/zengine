@@ -72,7 +72,7 @@ pub fn main() anyerror!void {
         const shape = zbt.initBoxShape(&[_]f32{ 1.0, 1.0, 1.0 });
         var transform = rl.Matrix.identity();
         transform.m13 = 5.0;
-        const material: core.entity.EntityMaterial = .{ .color = rl.Color.blue };
+        const material: core.entity.Entity.Material = .{ .color = rl.Color.blue };
         const mass = 1.0;
         break :cube_ent core.entity.Entity.init(state.physics.world, mesh, material, shape.asShape(), mass, transform);
     };
@@ -82,7 +82,7 @@ pub fn main() anyerror!void {
             rl.genMeshPlane(10.0, 10.0, 1, 1);
         const shape = zbt.initBoxShape(&[_]f32{ 10.0, 0.2, 10.0 });
         const transform = rl.Matrix.identity();
-        const material: core.entity.EntityMaterial = .{ .material = try rl.loadMaterialDefault() };
+        const material: core.entity.Entity.Material = .{ .material = try rl.loadMaterialDefault() };
         const mass = 0.0;
         break :floor_ent core.entity.Entity.init(state.physics.world, mesh, material, shape.asShape(), mass, transform);
     };
