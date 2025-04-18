@@ -12,7 +12,7 @@ fn init_camera() rl.Camera3D {
         .target = Vector3.init(0.0, 0.0, 0.0), // Camera looking at point
         .up = Vector3.init(0.0, 1.0, 0.0), // Camera up vector (rotation towards target)
         .fovy = 45.0, // Camera field-of-view Y
-        .projection = rl.CameraProjection.perspective,
+        .projection = rl.CameraProjection.orthographic,
     };
     return camera;
 }
@@ -50,7 +50,6 @@ pub fn main() anyerror!void {
     // Camera
     //---
     const camera = init_camera();
-
     var state = core.state.State{
         .window_height = screenHeight,
         .window_width = screenWidth,
@@ -93,35 +92,6 @@ pub fn main() anyerror!void {
     }
     defer state.cleanup_physics_world_entities();
 
-    // // THIS IS BAD, but okay for now
-    // var idx: i32 = 0;
-    // const cube_body = cube_ent.physics_body();
-    // defer cube_body.deinit();
-    // cube_ent.id = idx;
-    // idx += 1;
-    // physics_world.addBody(cube_body);
-    // defer physics_world.removeBody(cube_body);
-    // std.log.warn("ADDED CUBE\n", .{});
-
-    // const floor_body = floor_ent.physics_body();
-    // defer floor_body.deinit();
-    // floor_ent.id = idx;
-    // idx += 1;
-    // physics_world.addBody(floor_body);
-    // defer physics_world.removeBody(floor_body);
-    // std.log.warn("ADDED FLOOR\n", .{});
-
-    // var ray = rl.Ray{
-    //     .position = Vector3.zero(),
-    //     .direction = Vector3.zero(),
-    // }; // Picking line ray
-    // var collision = rl.RayCollision{
-    //     .hit = false,
-    //     .distance = 0.0,
-    //     .point = Vector3.zero(),
-    //     .normal = Vector3.zero(),
-    // };
-
     std.log.warn("{} BODIES\n", .{physics_world.getNumBodies()});
     // Main game loop
     while (!rl.windowShouldClose()) {
@@ -131,21 +101,6 @@ pub fn main() anyerror!void {
         state.object_picking(false);
         _ = physics_world.stepSimulation(dt, .{});
         physics_world.debugDrawAll();
-
-        {
-            // ray = rl.getScreenToWorldRay(rl.getMousePosition(), camera);
-            // collision = rl.getRayCollisionBox(ray, rl.BoundingBox{
-            //     .min = Vector3.init(cube_ent.transform.m4 - cube_ent.x / 2, cube_starting_pos.y - cube_size.y / 2, cube_starting_pos.z - cube_size.z / 2),
-            //     .max = Vector3.init(cube_starting_pos.x + cube_size.x / 2, cube_starting_pos.y + cube_size.y / 2, cube_starting_pos.z + cube_size.z / 2),
-            // });
-        }
-
-        if (rl.isMouseButtonPressed(.left)) {
-            // const wts = rl.getWorldToScreen(rl.getMousePosition(), camera);
-            // const stw = rl.getScreenToWorldRay(rl.getMousePosition(), camera);
-            // const ray_hit = physics_world.rayTestClosest(wts, stw, zbt.CollisionFilter.all, zbt.CollisionFilter.all, zbt.RayCastFlags{}, zbt.RayCastResult);
-            // _ = ray_hit;
-        }
 
         cube_ent.update(physics_world);
 
@@ -157,11 +112,6 @@ pub fn main() anyerror!void {
         {
             rl.beginMode3D(camera);
             defer rl.endMode3D();
-
-            // const cube_color, const wire_color = if (collision.hit)
-            //     [_]rl.Color{ rl.Color.green, rl.Color.red }
-            // else
-            //     [_]rl.Color{ rl.Color.gray, rl.Color.light_gray };
 
             try cube_ent.draw();
             try floor_ent.draw();
