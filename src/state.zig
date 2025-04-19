@@ -5,12 +5,12 @@ const std = @import("std");
 const zbt = @import("zbullet");
 
 pub const EntityArray =
-    core.da.DynamicArray(core.entity.Entity, 5);
+    core.da.DynamicArray(core.entity.OldEntity, 5);
 pub const State = struct {
     window_height: f32,
     window_width: f32,
     entities: EntityArray,
-    component_entites: core.entity.EntityStorage,
+    // component_entites: core.entity.OldEntity.Storage,
     camera: rl.Camera3D,
     mouse: struct {
         cursor_pos: [2]f64 = .{ 0, 0 },

@@ -72,9 +72,9 @@ pub fn main() anyerror!void {
         const shape = zbt.initBoxShape(&[_]f32{ 1.0, 1.0, 1.0 });
         var transform = rl.Matrix.identity();
         transform.m13 = 5.0;
-        const material: core.entity.Entity.Material = .{ .color = rl.Color.blue };
+        const material: core.entity.OldEntity.Material = .{ .color = rl.Color.blue };
         const mass = 1.0;
-        break :cube_ent core.entity.Entity.init(state.physics.world, mesh, material, shape.asShape(), mass, transform);
+        break :cube_ent core.entity.OldEntity.init(state.physics.world, mesh, material, shape.asShape(), mass, transform);
     };
 
     var floor_ent = floor_ent: {
@@ -82,12 +82,12 @@ pub fn main() anyerror!void {
             rl.genMeshPlane(10.0, 10.0, 1, 1);
         const shape = zbt.initBoxShape(&[_]f32{ 10.0, 0.2, 10.0 });
         const transform = rl.Matrix.identity();
-        const material: core.entity.Entity.Material = .{ .material = try rl.loadMaterialDefault() };
+        const material: core.entity.OldEntity.Material = .{ .material = try rl.loadMaterialDefault() };
         const mass = 0.0;
-        break :floor_ent core.entity.Entity.init(state.physics.world, mesh, material, shape.asShape(), mass, transform);
+        break :floor_ent core.entity.OldEntity.init(state.physics.world, mesh, material, shape.asShape(), mass, transform);
     };
 
-    for ([_]core.entity.Entity{ floor_ent, cube_ent }) |ent| {
+    for ([_]core.entity.OldEntity{ floor_ent, cube_ent }) |ent| {
         try state.entities.push_resize(ent);
     }
     defer state.cleanup_physics_world_entities();

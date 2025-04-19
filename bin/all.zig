@@ -5,5 +5,5 @@ pub fn main() void {
 }
 
 test {
-    _ = @import("entity.zig");
+    _ = @import("game.zig");
 }
