@@ -10,13 +10,17 @@ const Shape = zbt.Shape;
 test "ECS" {
     std.testing.refAllDecls(@This());
     const allocator = std.testing.allocator;
+    std.debug.print("\n\n---\nINIT ECS TEST\n", .{});
 
     const MyEcs = Ecs(5, &[_]Component{
         .{ "somecomponent", u32 },
         .{ "othercomponent", bool },
     });
 
-    _ = MyEcs.init(allocator);
+    const ecs = MyEcs.init(allocator);
+    defer ecs.deinit(allocator);
+
+    try std.testing.expect(false);
 }
 
 /// Simply an ID
@@ -162,6 +166,16 @@ pub fn Ecs(
         entity_map: std.AutoHashMap(usize, Entity),
         count: usize,
 
+        /// requires the same allocator be passed as with `init`
+        pub fn deinit(self: @This(), allocator: std.mem.Allocator) void {
+            var current = self.available_ids;
+            while (current.next) |n| {
+                defer allocator.destroy(current);
+                current = n;
+            }
+            defer allocator.destroy(current);
+        }
+
         pub fn init(allocator: std.mem.Allocator) Error!Self {
             var prng = std.Random.DefaultPrng.init(blk: {
                 var seed: u64 = undefined;
@@ -176,7 +190,10 @@ pub fn Ecs(
             for (0..MaxNEntities) |_| {
                 const id = rand.int(u32);
                 warn("Added ID: {} to queue\n", .{id});
-                const node = allocator.create(EntityIdQueue.Node) catch return error.OutOfMemory;
+                const node = allocator.create(EntityIdQueue.Node) catch |e| {
+                    std.log.err("Error: {}", .{e});
+                    return error.OutOfMemory;
+                };
                 node.* = EntityIdQueue.Node{ .next = null, .data = id };
                 current.next = node;
                 current = node;
@@ -271,10 +288,17 @@ pub fn Ecs(
 
         fn init(alloc: std.mem.Allocator) @This() {
             return @This(){
-                .entities = EntityManager.init(alloc) catch @panic("Failed to init Entity Manager"),
+                .entities = EntityManager.init(alloc) catch |e| {
+                    std.log.err("ERROR: {}", .{e});
+                    @panic("Failed to init Entity Manager");
+                },
                 .systems = SystemManager{},
                 .components = ComponentsData(Components).init(),
             };
+        }
+
+        fn deinit(self: @This(), allocator: std.mem.Allocator) void {
+            self.entities.deinit(allocator);
         }
 
         // fn insert_component_into_entity(self: Ecs, entity: Entity, component: anytype) void {
