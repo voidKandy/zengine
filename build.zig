@@ -28,20 +28,31 @@ pub fn build(b: *std.Build) void {
     engine_core_lib.addImport("raylib", raylib);
     engine_core_lib.addImport("raygui", raygui);
 
-    // Test Binaries
-    // ---
-    //
-    const test_entry =
-        b.path("bin/all.zig");
-    const bins_dir = "bin";
-
     const lib_unit_tests = b.addTest(.{
-        .root_source_file = test_entry,
+        .root_source_file = b.path("src/root.zig"),
         .target = target,
         .optimize = optimize,
     });
 
-    const dir = std.fs.cwd().openDir(bins_dir, .{}) catch |e| std.debug.panic("Failed to get directory {s}: {}\n", .{ test_entry.src_path.sub_path, e });
+    // lib_unit_tests.root_module.addImport("engine_core", engine_core_lib);
+    lib_unit_tests.root_module.addImport("zbullet", zbullet.module("root"));
+    lib_unit_tests.linkLibrary(zbullet.artifact("cbullet"));
+    lib_unit_tests.linkLibrary(raylib_artifact);
+    lib_unit_tests.root_module.addImport("raylib", raylib);
+    lib_unit_tests.root_module.addImport("zmath", zmath.module("root"));
+    lib_unit_tests.root_module.addImport("raygui", raygui);
+
+    const run_lib_unit_tests = b.addRunArtifact(lib_unit_tests);
+
+    const test_step = b.step("test", "Run unit tests");
+    test_step.dependOn(&run_lib_unit_tests.step);
+
+    // Binaries
+    // ---
+    //
+    const bins_entry = b.path("bin/all.zig");
+    const bins_dir = "bin";
+    const dir = std.fs.cwd().openDir(bins_dir, .{}) catch |e| std.debug.panic("Failed to get directory {s}: {}\n", .{ bins_entry.src_path.sub_path, e });
     var buffer: [256]u8 = undefined;
     @memset(&buffer, 0);
     var fba = std.heap.FixedBufferAllocator.init(&buffer);
@@ -55,17 +66,20 @@ pub fn build(b: *std.Build) void {
 
         const fullpath = std.fmt.allocPrint(fba.allocator(), "{s}/{s}", .{ bins_dir, f.name }) catch |e| std.debug.panic("Failed to get full path: {}\n", .{e});
         const exe = b.addExecutable(.{ .name = name, .root_source_file = b.path(fullpath), .target = target, .optimize = optimize });
+
+        exe.root_module.addImport("engine_core", engine_core_lib);
         exe.root_module.addImport("zbullet", zbullet.module("root"));
         exe.linkLibrary(zbullet.artifact("cbullet"));
         exe.linkLibrary(raylib_artifact);
         exe.root_module.addImport("zmath", zmath.module("root"));
         exe.root_module.addImport("raylib", raylib);
         exe.root_module.addImport("raygui", raygui);
-        exe.root_module.addImport("engine_core", engine_core_lib);
+
         b.installArtifact(exe);
         const run = b.addRunArtifact(exe);
         const step = b.step(name, f.name);
         step.dependOn(&run.step);
+
         if (b.args) |args| {
             run.addArgs(args);
         }
@@ -74,15 +88,4 @@ pub fn build(b: *std.Build) void {
         // const step = b.step(step_name, f.name);
         // exe.dependOn(&run);
     }
-    lib_unit_tests.root_module.addImport("zbullet", zbullet.module("root"));
-    lib_unit_tests.linkLibrary(zbullet.artifact("cbullet"));
-    lib_unit_tests.linkLibrary(raylib_artifact);
-    lib_unit_tests.root_module.addImport("raylib", raylib);
-    lib_unit_tests.root_module.addImport("zmath", zmath.module("root"));
-    lib_unit_tests.root_module.addImport("raygui", raygui);
-    lib_unit_tests.root_module.addImport("engine_core", engine_core_lib);
-    const run_lib_unit_tests = b.addRunArtifact(lib_unit_tests);
-
-    const test_step = b.step("test", "Run unit tests");
-    test_step.dependOn(&run_lib_unit_tests.step);
 }

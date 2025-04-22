@@ -8,10 +8,10 @@ pub fn DynamicArray(comptime T: type, comptime InitSize: usize) type {
         amt: usize,
         const Self = @This();
 
-        fn all_items(self: Self) []const T {
-            var split = std.mem.splitScalar(?T, self.items, null);
-            return split.first();
-        }
+        // pub fn all_items(self: Self) []const T {
+        //     var split = std.mem.splitScalar(?T, self.items, null);
+        //     return split.rest();
+        // }
 
         const IncreasedScale =
             DynamicArray(T, InitSize * 2);
@@ -19,7 +19,9 @@ pub fn DynamicArray(comptime T: type, comptime InitSize: usize) type {
         const DecreasedScale = DynamicArray(T, InitSize / 2);
 
         pub fn init() Self {
-            std.log.debug("INITILIAZING DYNAMIC ARRAY OF SIZE: {}\n", .{InitSize});
+            if (!@inComptime()) {
+                std.log.debug("INITILIAZING DYNAMIC ARRAY OF SIZE: {}\n", .{InitSize});
+            }
             var my_items: [InitSize]?T = undefined;
             @memset(&my_items, null);
             return .{ .items = my_items, .amt = 0 };

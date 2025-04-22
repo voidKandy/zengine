@@ -3,6 +3,10 @@ pub const da = @import("dynamic_array.zig");
 pub const entity = @import("entity.zig");
 pub const state = @import("state.zig");
 
+test {
+    std.testing.refAllDecls(@This());
+}
+
 /// # Cloning Inscription
 /// ---
 const CardType = enum {
@@ -217,10 +221,6 @@ const GameState = struct {
     player: PlayerState,
     opposer: PlayerState,
 };
-
-test {
-    @import("std").testing.refAllDecls(@This());
-}
 
 test "game state" {
     const deck =

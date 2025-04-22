@@ -5,5 +5,7 @@ pub fn main() void {
 }
 
 test {
+    // const std = @import("std");
     _ = @import("game.zig");
+    std.testing.refAllDecls(@This());
 }

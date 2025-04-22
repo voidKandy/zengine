@@ -1,27 +1,151 @@
 const rl = @import("raylib");
 const std = @import("std");
 const zbt = @import("zbullet");
-const core = @import("engine_core");
+const core = @import("root.zig");
 const warn = std.log.warn;
+const Type = std.builtin.Type;
 const State = core.state.State;
 const Shape = zbt.Shape;
+
+test "ECS" {
+    std.testing.refAllDecls(@This());
+    const allocator = std.testing.allocator;
+
+    const MyEcs = Ecs(5, &[_]Component{
+        .{ "somecomponent", u32 },
+        .{ "othercomponent", bool },
+    });
+
+    _ = MyEcs.init(allocator);
+}
 
 /// Simply an ID
 const Entity = u32;
 
-fn EntityManager(
-    comptime MaxNEntities: usize,
-    comptime MaxNComponents: usize,
+const Component = struct { [:0]const u8, type };
+
+pub fn ComponentsData(
+    comptime Components: []const Component,
 ) type {
-    if (MaxNEntities <= 0) {
-        @compileError("MaxNEntities MUST >= 0");
-    }
-    if (MaxNComponents <= 0) {
-        @compileError("MaxNComponents MUST >= 0");
-    }
+    // each field is an array of the type passed for each component
+    const N = Components.len;
+    const Fields: []Type.StructField = blk: {
+        var fields: [N]Type.StructField = undefined;
+        inline for (&fields, Components) |*f, c| {
+            // const FieldType = std.meta.Tuple{
+            //     [Components.len]?c.@"1",
+            //     usize,
+            // };
+            // var e: [Components.len]c.@"1" = undefined;
+            // @memset(&e,* );
+            // const empty = e;
+
+            f.* = Type.StructField{
+                .name = c.@"0",
+                .type = [Components.len]c.@"1",
+                .default_value_ptr = &@as([Components.len]c.@"1", undefined),
+                .is_comptime = false,
+                .alignment = @alignOf(c.@"1"),
+            };
+        }
+        break :blk fields[0..];
+    };
+
+    const Inner = @Type(Type{ .@"struct" = Type.Struct{
+        .is_tuple = false,
+        .layout = Type.ContainerLayout.auto,
+        .fields = Fields,
+        .decls = @typeInfo(struct {}).@"struct".decls,
+    } });
 
     return struct {
-        const Signature = std.bit_set.IntegerBitSet(@intCast(MaxNComponents));
+        inner: Inner,
+
+        pub fn init() @This() {
+            return @This(){ .inner = Inner{} };
+        }
+        // Appends to corresponding component array
+        // fn append()
+    };
+}
+
+// test "test component manager" {
+//     const Cm = ComponentManager(5, &[_]type{
+//         u32,
+//     });
+//     var cm = Cm.init();
+//     cm.inner.u32[0] = 5;
+
+//     try std.testing.expectEqual(5, cm.inner.u32[0]);
+// }
+
+fn System(comptime T: type, N: comptime_int, comptime updateFn: fn (self: T, state: anytype) void) type {
+    return struct {
+        t: T,
+        signature: std.bit_set.IntegerBitSet(@intCast(N)),
+
+        /// idk abt this yet
+        fn update(self: @This(), state: anytype) void {
+            updateFn(self, state);
+        }
+    };
+}
+/// Entity Component System "Coordinator"
+pub fn Ecs(
+    MaxNEntities: comptime_int,
+    // MaxNComponents: comptime_int,
+    comptime Components: []const Component,
+) type {
+    // Component use of entities is flagged by a single bit a bit set the size of the `Components` type array.
+    // Each `Entity` has a `Signature`
+    // Each `System` has a `Signature`
+    const Signature = std.bit_set.IntegerBitSet(@intCast(Components.len));
+
+    const SystemsEnum = blk: {
+        var fields: [Components.len]Type.EnumField = undefined;
+        @memset(&fields, Type.EnumField{
+            .name = "",
+            .value = 0,
+        });
+
+        for (0.., Components) |i, c| {
+            fields[i] = Type.EnumField{
+                .name = c.@"0",
+                .value = i,
+            };
+        }
+        break :blk @Type(Type{ .@"enum" = .{
+            .tag_type = u32,
+            .fields = &fields,
+            .decls = &[_]Type.Declaration{},
+            .is_exhaustive = true,
+        } });
+    };
+    const SystemManager =
+        struct {
+            registered_systems: [Components.len]?Signature = blk: {
+                var arr: [Components.len]?Signature = undefined;
+                @memset(&arr, null);
+                break :blk arr;
+            },
+            // _sys_enum: type = SystemsEnum,
+
+            fn insert_system(self: @This(), Which: SystemsEnum, signature: Signature) void {
+                warn("inserting system for {}", .{Which});
+                if (self.registered_systems[@intFromEnum(Which)]) |_| {
+                    @panic("WILL CLOBBER");
+                }
+
+                self.registered_systems[@intFromEnum(Which)] = signature;
+            }
+
+            fn delete_system(self: @This(), Which: SystemsEnum) void {
+                warn("deleting system for {}", .{Which});
+                self.registered_systems[@intFromEnum(Which)] = null;
+            }
+        };
+
+    const EntityManager = struct {
         const EntityIdQueue = std.DoublyLinkedList(u32);
         const Self = @This();
         const Error = error{
@@ -137,45 +261,64 @@ fn EntityManager(
             const idx = self.index_map.get(entity);
             return self.signatures[idx];
         }
+        // fn register_component_for_entity(self: *Self, entity: Entity, component: anytype) void {}
+    };
+
+    return struct {
+        entities: EntityManager,
+        systems: SystemManager,
+        components: ComponentsData(Components),
+
+        fn init(alloc: std.mem.Allocator) @This() {
+            return @This(){
+                .entities = EntityManager.init(alloc) catch @panic("Failed to init Entity Manager"),
+                .systems = SystemManager{},
+                .components = ComponentsData(Components).init(),
+            };
+        }
+
+        // fn insert_component_into_entity(self: Ecs, entity: Entity, component: anytype) void {
+        //     const index: usize = self.entities.index_map.get(entity);
+        // }
     };
 }
 
-test "entity manager" {
-    const Manager =
-        EntityManager(5, 3);
-    const allocator = std.testing.allocator;
-    var arena = std.heap.ArenaAllocator.init(allocator);
-    defer arena.deinit();
-    var manager = try Manager.init(arena.allocator());
-    const entity_a = try manager.register(sig: {
-        var s = Manager.Signature.initEmpty();
-        s.toggle(0);
-        break :sig s;
-    });
-    const entity_b = try manager.register(sig: {
-        var s = Manager.Signature.initEmpty();
-        s.toggle(2);
-        break :sig s;
-    });
-    const entity_c = try manager.register(sig: {
-        var s = Manager.Signature.initEmpty();
-        s.toggle(1);
-        break :sig s;
-    });
+// test "entity manager" {
+//     const Manager =
+//         EntityManager(5, 3);
+//     const allocator = std.testing.allocator;
+//     var arena = std.heap.ArenaAllocator.init(allocator);
+//     defer arena.deinit();
+//     var manager = try Manager.init(arena.allocator());
+//     const entity_a = try manager.register(sig: {
+//         var s = Manager.Signature.initEmpty();
+//         s.toggle(0);
+//         break :sig s;
+//     });
+//     const entity_b = try manager.register(sig: {
+//         var s = Manager.Signature.initEmpty();
+//         s.toggle(2);
+//         break :sig s;
+//     });
+//     const entity_c = try manager.register(sig: {
+//         var s = Manager.Signature.initEmpty();
+//         s.toggle(1);
+//         break :sig s;
+//     });
 
-    defer {
-        warn("MAP: {}", .{manager.index_map});
-    }
-    try std.testing.expectEqual(0, manager.index_map.get(entity_a));
-    try std.testing.expectEqual(1, manager.index_map.get(entity_b));
+//     defer {
+//         warn("MAP: {}", .{manager.index_map});
+//     }
+//     try std.testing.expectEqual(0, manager.index_map.get(entity_a));
+//     try std.testing.expectEqual(1, manager.index_map.get(entity_b));
 
-    try manager.remove(arena.allocator(), entity_a);
-    const entity_d = try manager.register(Manager.Signature.initFull());
-    _ = entity_d;
+//     try manager.remove(arena.allocator(), entity_a);
+//     const entity_d = try manager.register(Manager.Signature.initFull());
+//     _ = entity_d;
 
-    try std.testing.expectEqual(0, manager.index_map.get(entity_c));
-    try std.testing.expect(manager.signatures[0].isSet(1));
-}
+//     try std.testing.expectEqual(0, manager.index_map.get(entity_c));
+//     try std.testing.expect(manager.signatures[0].isSet(1));
+// }
 
 pub const OldEntity = struct {
     const MaterialTag = enum { color, material };
@@ -284,66 +427,3 @@ pub const OldEntity = struct {
         rl.drawMesh(self.mesh, material, self.transform);
     }
 };
-
-pub fn ComponentManager(
-    MAX_COMPONENTS: comptime_int,
-    comptime ComponentTypes: []const type,
-) type {
-    const N = ComponentTypes.len;
-    const Fields: [N]std.builtin.Type.StructField = blk: {
-        var fields: [N]std.builtin.Type.StructField = undefined;
-        // need some default value
-        @memset(&fields, std.builtin.Type.StructField{
-            .name = "",
-            .type = u1,
-            .default_value_ptr = null,
-            .is_comptime = false,
-            .alignment = @alignOf(u1),
-        });
-        inline for (0.., ComponentTypes) |i, t| {
-            // this has to be called like this
-            const name = @typeName(t);
-            for (name) |ch| {
-                if (std.ascii.isUpper(ch)) {
-                    ch += 32;
-                }
-            }
-            // defer warn("NAME: {s}\n", .{name});
-
-            const _type = @Type(std.builtin.Type{ .array = std.builtin.Type.Array{ .len = MAX_COMPONENTS, .child = t, .sentinel_ptr = null } });
-            fields[i] = std.builtin.Type.StructField{
-                .name = name,
-                .type = _type,
-                .default_value_ptr = null,
-                .is_comptime = false,
-                .alignment = @alignOf(_type),
-            };
-        }
-        break :blk fields;
-    };
-
-    const Phantom = struct {};
-
-    return @Type(std.builtin.Type{ .@"struct" = std.builtin.Type.Struct{
-        .is_tuple = false,
-        .layout = std.builtin.Type.ContainerLayout.auto,
-        .fields = &Fields,
-        .decls = @typeInfo(Phantom).@"struct".decls,
-    } });
-
-    // var _type = @Type(std.builtin.Type {
-    //     .@"struct"
-
-    //     };
-
-    // return _type;
-
-}
-
-test "test component manager" {
-    const Cm = ComponentManager(5, &[_]type{
-        u32,
-    });
-    const cm = Cm{ .u32 = [5]u32{ 0, 0, 0, 0, 0 } };
-    try std.testing.expectEqual(cm.u32[0], 0);
-}
