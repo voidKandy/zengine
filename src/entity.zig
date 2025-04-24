@@ -10,22 +10,54 @@ const Shape = zbt.Shape;
 test "ECS" {
     std.testing.refAllDecls(@This());
     const allocator = std.testing.allocator;
-    std.debug.print("\n\n---\nINIT ECS TEST\n", .{});
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
 
-    const MyEcs = Ecs(5, &[_]Component{
+    std.debug.print("\n\n---\nINIT ECS TEST\n---\n", .{});
+
+    const MyEcs = Ecs(5, 3, &[_]Component{
         .{ "somecomponent", u32 },
         .{ "othercomponent", bool },
+        .{ "someothercomponent", u16 },
     });
 
-    const ecs = MyEcs.init(allocator);
-    defer ecs.deinit(allocator);
+    var ecs = MyEcs.init(arena.allocator());
+    defer ecs.deinit(arena.allocator());
 
-    try std.testing.expect(false);
+    const entity_a = try ecs.entities.register(sig: {
+        var s = MyEcs.Signature.initEmpty();
+        s.toggle(@intFromEnum(MyEcs.ComponentsEnum.somecomponent));
+        break :sig s;
+    });
+    const entity_b = try ecs.entities.register(sig: {
+        var s = MyEcs.Signature.initEmpty();
+        s.toggle(@intFromEnum(MyEcs.ComponentsEnum.someothercomponent));
+        break :sig s;
+    });
+    const entity_c = try ecs.entities.register(sig: {
+        var s = MyEcs.Signature.initEmpty();
+        s.toggle(@intFromEnum(MyEcs.ComponentsEnum.othercomponent));
+        break :sig s;
+    });
+
+    defer {
+        warn("MAP: {}", .{ecs.entities.index_map});
+    }
+    try std.testing.expectEqual(0, ecs.entities.index_map.get(entity_a.@"0"));
+    try std.testing.expectEqual(1, ecs.entities.index_map.get(entity_b.@"0"));
+
+    try ecs.entities.remove(arena.allocator(), entity_a.@"0");
+    const entity_d = try ecs.entities.register(MyEcs.Signature.initFull());
+    _ = entity_d;
+
+    try std.testing.expectEqual(0, ecs.entities.index_map.get(entity_c.@"0"));
+    try std.testing.expect(ecs.entities.signatures[0].isSet(@intFromEnum(MyEcs.ComponentsEnum.othercomponent)));
+
+    // try std.testing.expect(false);
 }
 
 /// Simply an ID
 const Entity = u32;
-
 const Component = struct { [:0]const u8, type };
 
 pub fn ComponentsData(
@@ -94,86 +126,42 @@ fn System(comptime T: type, N: comptime_int, comptime updateFn: fn (self: T, sta
         }
     };
 }
-/// Entity Component System "Coordinator"
-pub fn Ecs(
-    MaxNEntities: comptime_int,
-    // MaxNComponents: comptime_int,
-    comptime Components: []const Component,
+
+/// Used to manage any struct that can be identified with a `u32` and that has a signature
+/// (Entities & Systems)
+fn IdentifierManager(
+    MAX: comptime_int,
+    SIGNATURE_SIZE: comptime_int,
 ) type {
-    // Component use of entities is flagged by a single bit a bit set the size of the `Components` type array.
-    // Each `Entity` has a `Signature`
-    // Each `System` has a `Signature`
-    const Signature = std.bit_set.IntegerBitSet(@intCast(Components.len));
-
-    const SystemsEnum = blk: {
-        var fields: [Components.len]Type.EnumField = undefined;
-        @memset(&fields, Type.EnumField{
-            .name = "",
-            .value = 0,
-        });
-
-        for (0.., Components) |i, c| {
-            fields[i] = Type.EnumField{
-                .name = c.@"0",
-                .value = i,
-            };
-        }
-        break :blk @Type(Type{ .@"enum" = .{
-            .tag_type = u32,
-            .fields = &fields,
-            .decls = &[_]Type.Declaration{},
-            .is_exhaustive = true,
-        } });
-    };
-    const SystemManager =
-        struct {
-            registered_systems: [Components.len]?Signature = blk: {
-                var arr: [Components.len]?Signature = undefined;
-                @memset(&arr, null);
-                break :blk arr;
-            },
-            // _sys_enum: type = SystemsEnum,
-
-            fn insert_system(self: @This(), Which: SystemsEnum, signature: Signature) void {
-                warn("inserting system for {}", .{Which});
-                if (self.registered_systems[@intFromEnum(Which)]) |_| {
-                    @panic("WILL CLOBBER");
-                }
-
-                self.registered_systems[@intFromEnum(Which)] = signature;
-            }
-
-            fn delete_system(self: @This(), Which: SystemsEnum) void {
-                warn("deleting system for {}", .{Which});
-                self.registered_systems[@intFromEnum(Which)] = null;
-            }
-        };
-
-    const EntityManager = struct {
-        const EntityIdQueue = std.DoublyLinkedList(u32);
+    return struct {
+        const Identifier = u32;
+        const Signature = std.bit_set.IntegerBitSet(@intCast(SIGNATURE_SIZE));
+        const IdQueue = std.DoublyLinkedList(Identifier);
         const Self = @This();
         const Error = error{
-            NoEntity,
+            NoIdentifier,
             Insert,
             NoIndex,
             Random,
             OutOfMemory,
         };
 
-        available_ids: *EntityIdQueue.Node,
-        signatures: [MaxNEntities]Signature,
-        index_map: std.AutoHashMap(Entity, usize),
-        entity_map: std.AutoHashMap(usize, Entity),
+        available_ids: *IdQueue.Node,
+        signatures: [MAX]Signature,
+        index_map: std.AutoHashMap(Identifier, usize),
+        identifier_map: std.AutoHashMap(usize, Identifier),
         count: usize,
 
         /// requires the same allocator be passed as with `init`
-        pub fn deinit(self: @This(), allocator: std.mem.Allocator) void {
+        pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
+            defer self.index_map.deinit();
+            defer self.identifier_map.deinit();
             var current = self.available_ids;
             while (current.next) |n| {
-                defer allocator.destroy(current);
+                allocator.destroy(current);
                 current = n;
             }
-            defer allocator.destroy(current);
+            allocator.destroy(current);
         }
 
         pub fn init(allocator: std.mem.Allocator) Error!Self {
@@ -184,36 +172,37 @@ pub fn Ecs(
             });
             const rand = prng.random();
 
-            const head = allocator.create(EntityIdQueue.Node) catch return error.OutOfMemory;
-            head.* = EntityIdQueue.Node{ .next = null, .data = rand.int(u32) };
+            const head = allocator.create(IdQueue.Node) catch return error.OutOfMemory;
+            head.* = IdQueue.Node{ .next = null, .data = rand.int(u32) };
             var current = head;
-            for (0..MaxNEntities) |_| {
+            for (0..MAX) |_| {
                 const id = rand.int(u32);
                 warn("Added ID: {} to queue\n", .{id});
-                const node = allocator.create(EntityIdQueue.Node) catch |e| {
+                const node = allocator.create(IdQueue.Node) catch |e| {
                     std.log.err("Error: {}", .{e});
                     return error.OutOfMemory;
                 };
-                node.* = EntityIdQueue.Node{ .next = null, .data = id };
+                node.* = IdQueue.Node{ .next = null, .data = id };
                 current.next = node;
                 current = node;
             }
 
-            var signatures: [MaxNEntities]Signature = undefined;
+            var signatures: [MAX]Signature = undefined;
             @memset(&signatures, Signature.initEmpty());
 
-            const idx_map = std.AutoHashMap(Entity, usize).init(allocator);
-            const ent_map = std.AutoHashMap(usize, Entity).init(allocator);
+            const idx_map = std.AutoHashMap(Identifier, usize).init(allocator);
+            const ent_map = std.AutoHashMap(usize, Identifier).init(allocator);
             return Self{
                 .available_ids = head,
                 .signatures = signatures,
                 .index_map = idx_map,
-                .entity_map = ent_map,
+                .identifier_map = ent_map,
                 .count = 0,
             };
         }
 
-        pub fn register(self: *Self, sig: Signature) Error!Entity {
+        /// Returns a tuple of the `Identifier` (`u32`) and the index
+        pub fn register(self: *Self, sig: Signature) Error!struct { Identifier, usize } {
             defer {
                 warn(
                     \\ SIGNATURE: {b}
@@ -225,29 +214,29 @@ pub fn Ecs(
                 }
             }
 
-            const ent: Entity = ent: {
+            const id: Identifier = ent: {
                 const node = self.available_ids;
-                const next = self.available_ids.next orelse return error.NoEntity;
+                const next = self.available_ids.next orelse return error.NoIdentifier;
                 self.available_ids = next;
                 break :ent node.data;
             };
             warn(
-                \\ REGISTERING ENTITY: {}
+                \\ REGISTERING IDENTIFIER: {}
                 \\ COUNT: {}
-            , .{ ent, self.count });
-            self.index_map.put(ent, self.count) catch return error.Insert;
-            self.entity_map.put(self.count, ent) catch return error.Insert;
+            , .{ id, self.count });
+            self.index_map.put(id, self.count) catch return error.Insert;
+            self.identifier_map.put(self.count, id) catch return error.Insert;
             self.signatures[self.count] = sig;
             self.count += 1;
 
-            return ent;
+            return .{ id, self.count - 1 };
         }
 
         // Allocates Queue node for the removed entity
-        pub fn remove(self: *Self, allocator: std.mem.Allocator, entity: Entity) Error!void {
+        pub fn remove(self: *Self, allocator: std.mem.Allocator, entity: Identifier) Error!void {
             const index = self.index_map.get(entity) orelse return error.NoIndex;
             const last_sig = self.signatures[self.count - 1];
-            const last_ent = self.entity_map.get(self.count - 1) orelse return error.NoEntity;
+            const last_ent = self.identifier_map.get(self.count - 1) orelse return error.NoIdentifier;
             warn(
                 \\
                 \\ REMOVING ENTITY: {}
@@ -257,13 +246,13 @@ pub fn Ecs(
             , .{ entity, index, last_sig.mask, last_ent });
 
             self.index_map.put(last_ent, index) catch return error.Insert;
-            self.entity_map.put(index, last_ent) catch return error.Insert;
+            self.identifier_map.put(index, last_ent) catch return error.Insert;
             self.signatures[index] = last_sig;
             self.signatures[self.count - 1] = Signature.initEmpty();
 
-            const node = allocator.create(EntityIdQueue.Node) catch return error.OutOfMemory;
-            node.* = EntityIdQueue.Node{ .next = null, .data = entity };
-            var current: *EntityIdQueue.Node = self.available_ids.next orelse @panic("EMPTY IDS?");
+            const node = allocator.create(IdQueue.Node) catch return error.OutOfMemory;
+            node.* = IdQueue.Node{ .next = null, .data = entity };
+            var current: *IdQueue.Node = self.available_ids.next orelse @panic("EMPTY IDS?");
             while (current.next) |next| {
                 current = next;
             }
@@ -274,14 +263,46 @@ pub fn Ecs(
             , .{self.count});
             return;
         }
-        pub fn get_signature(self: Self, entity: Entity) Self.Signature {
+
+        pub fn get_signature(self: Self, entity: Identifier) Self.Signature {
             const idx = self.index_map.get(entity);
             return self.signatures[idx];
         }
-        // fn register_component_for_entity(self: *Self, entity: Entity, component: anytype) void {}
+        // fn register_component_for_entity(self: *Self, entity: Identifier, component: anytype) void {}
     };
+}
 
+/// Entity Component System "Coordinator"
+pub fn Ecs(
+    MaxNEntities: comptime_int,
+    MaxNSystems: comptime_int,
+    // MaxNComponents: comptime_int,
+    comptime Components: []const Component,
+) type {
     return struct {
+        const Signature = std.bit_set.IntegerBitSet(@intCast(Components.len));
+        const ComponentsEnum = blk: {
+            var fields: [Components.len]Type.EnumField = undefined;
+            @memset(&fields, Type.EnumField{
+                .name = "",
+                .value = 0,
+            });
+
+            for (0.., Components) |i, c| {
+                fields[i] = Type.EnumField{
+                    .name = c.@"0",
+                    .value = i,
+                };
+            }
+            break :blk @Type(Type{ .@"enum" = .{
+                .tag_type = u32,
+                .fields = &fields,
+                .decls = &[_]Type.Declaration{},
+                .is_exhaustive = true,
+            } });
+        };
+        const EntityManager = IdentifierManager(MaxNEntities, Components.len);
+        const SystemManager = IdentifierManager(MaxNSystems, Components.len);
         entities: EntityManager,
         systems: SystemManager,
         components: ComponentsData(Components),
@@ -292,13 +313,17 @@ pub fn Ecs(
                     std.log.err("ERROR: {}", .{e});
                     @panic("Failed to init Entity Manager");
                 },
-                .systems = SystemManager{},
+                .systems = SystemManager.init(alloc) catch |e| {
+                    std.log.err("ERROR: {}", .{e});
+                    @panic("Failed to init Entity Manager");
+                },
                 .components = ComponentsData(Components).init(),
             };
         }
 
-        fn deinit(self: @This(), allocator: std.mem.Allocator) void {
+        fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
             self.entities.deinit(allocator);
+            self.systems.deinit(allocator);
         }
 
         // fn insert_component_into_entity(self: Ecs, entity: Entity, component: anytype) void {
