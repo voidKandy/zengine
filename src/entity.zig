@@ -7,7 +7,7 @@ const Type = std.builtin.Type;
 const State = core.state.State;
 const Shape = zbt.Shape;
 
-test "ECS" {
+test "ECS Entity Management" {
     std.testing.refAllDecls(@This());
     const allocator = std.testing.allocator;
     var arena = std.heap.ArenaAllocator.init(allocator);
@@ -15,7 +15,7 @@ test "ECS" {
 
     std.debug.print("\n\n---\nINIT ECS TEST\n---\n", .{});
 
-    const MyEcs = Ecs(5, 3, &[_]Component{
+    const MyEcs = Ecs(5, 0, &[_]Component{
         .{ "somecomponent", u32 },
         .{ "othercomponent", bool },
         .{ "someothercomponent", u16 },
@@ -40,20 +40,75 @@ test "ECS" {
         break :sig s;
     });
 
-    defer {
-        warn("MAP: {}", .{ecs.entities.index_map});
-    }
     try std.testing.expectEqual(0, ecs.entities.index_map.get(entity_a.@"0"));
     try std.testing.expectEqual(1, ecs.entities.index_map.get(entity_b.@"0"));
 
     try ecs.entities.remove(arena.allocator(), entity_a.@"0");
     const entity_d = try ecs.entities.register(MyEcs.Signature.initFull());
-    _ = entity_d;
 
     try std.testing.expectEqual(0, ecs.entities.index_map.get(entity_c.@"0"));
     try std.testing.expect(ecs.entities.signatures[0].isSet(@intFromEnum(MyEcs.ComponentsEnum.othercomponent)));
 
-    // try std.testing.expect(false);
+    try std.testing.expectEqual(2, ecs.entities.index_map.get(entity_d.@"0"));
+    try std.testing.expect(e: {
+        var correct = true;
+        const d_sig =
+            ecs.entities.signatures[2];
+        correct = d_sig.isSet(@intFromEnum(MyEcs.ComponentsEnum.somecomponent));
+        correct = d_sig.isSet(@intFromEnum(MyEcs.ComponentsEnum.othercomponent));
+        correct = d_sig.isSet(@intFromEnum(MyEcs.ComponentsEnum.someothercomponent));
+        break :e correct;
+    });
+
+    std.debug.print("ENTITY MANAGEMENT WORKS AS EXPECTED\n", .{});
+}
+
+fn basic_system(state: State) void {
+    _ = state;
+}
+test "ECS System Management" {
+    std.testing.refAllDecls(@This());
+    const allocator = std.testing.allocator;
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+
+    std.debug.print("\n\n---\nINIT ECS TEST\n---\n", .{});
+
+    const MyEcs = Ecs(5, 2, &[_]Component{
+        .{ "somecomponent", u32 },
+        .{ "othercomponent", bool },
+        .{ "someothercomponent", u16 },
+    });
+
+    var ecs = MyEcs.init(arena.allocator());
+    defer ecs.deinit(arena.allocator());
+
+    const entity_a = try ecs.entities.register(sig: {
+        var s = MyEcs.Signature.initEmpty();
+        s.toggle(@intFromEnum(MyEcs.ComponentsEnum.somecomponent));
+        break :sig s;
+    });
+    const entity_b = try ecs.entities.register(sig: {
+        var s = MyEcs.Signature.initEmpty();
+        s.toggle(@intFromEnum(MyEcs.ComponentsEnum.someothercomponent));
+        break :sig s;
+    });
+    const entity_c = try ecs.entities.register(sig: {
+        var s = MyEcs.Signature.initEmpty();
+        s.toggle(@intFromEnum(MyEcs.ComponentsEnum.othercomponent));
+        break :sig s;
+    });
+    const entity_d = try ecs.entities.register(MyEcs.Signature.initFull());
+    _ = entity_a;
+    _ = entity_b;
+    _ = entity_c;
+    _ = entity_d;
+
+    try ecs.register_system(sig: {
+        var s = MyEcs.Signature.initEmpty();
+        s.toggle(@intFromEnum(MyEcs.ComponentsEnum.othercomponent));
+        break :sig s;
+    }, basic_system);
 }
 
 /// Simply an ID
@@ -276,11 +331,12 @@ fn IdentifierManager(
 pub fn Ecs(
     MaxNEntities: comptime_int,
     MaxNSystems: comptime_int,
-    // MaxNComponents: comptime_int,
     comptime Components: []const Component,
 ) type {
     return struct {
         const Signature = std.bit_set.IntegerBitSet(@intCast(Components.len));
+        /// WIP!!
+        const SystemFunction = *const fn (State) void;
         const ComponentsEnum = blk: {
             var fields: [Components.len]Type.EnumField = undefined;
             @memset(&fields, Type.EnumField{
@@ -304,7 +360,14 @@ pub fn Ecs(
         const EntityManager = IdentifierManager(MaxNEntities, Components.len);
         const SystemManager = IdentifierManager(MaxNSystems, Components.len);
         entities: EntityManager,
-        systems: SystemManager,
+        systems: struct {
+            manager: SystemManager,
+            funcs: [MaxNSystems]?SystemFunction = s: {
+                var v: [MaxNSystems]?SystemFunction = undefined;
+                @memset(&v, null);
+                break :s v;
+            },
+        },
         components: ComponentsData(Components),
 
         fn init(alloc: std.mem.Allocator) @This() {
@@ -313,17 +376,23 @@ pub fn Ecs(
                     std.log.err("ERROR: {}", .{e});
                     @panic("Failed to init Entity Manager");
                 },
-                .systems = SystemManager.init(alloc) catch |e| {
+                .systems = .{ .manager = SystemManager.init(alloc) catch |e| {
                     std.log.err("ERROR: {}", .{e});
                     @panic("Failed to init Entity Manager");
-                },
+                } },
                 .components = ComponentsData(Components).init(),
             };
         }
 
         fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
             self.entities.deinit(allocator);
-            self.systems.deinit(allocator);
+            self.systems.manager.deinit(allocator);
+        }
+
+        fn register_system(self: *@This(), signature: Signature, func: SystemFunction) !void {
+            const system_id, const system_idx = try self.systems.manager.register(signature);
+            std.log.debug("REGISTERED SYSTEM WITH ID: {} INTO ECS", .{system_id});
+            self.systems.funcs[system_idx] = func;
         }
 
         // fn insert_component_into_entity(self: Ecs, entity: Entity, component: anytype) void {
