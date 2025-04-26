@@ -16,19 +16,28 @@ test "ECS Entity Management" {
     std.debug.print("\n\n---\nINIT ECS TEST\n---\n", .{});
 
     const MyEcs = Ecs(5, 0, &[_]Component{
-        .{ "somecomponent", u32 },
-        .{ "othercomponent", bool },
-        .{ "someothercomponent", u16 },
+        .{ "somecomponent", bool },
+        .{ "othercomponent", u8 },
+        .{ "someothercomponent", u32 },
     });
 
     var ecs = MyEcs.init(arena.allocator());
     defer ecs.deinit(arena.allocator());
-
     const entity_a = try ecs.entities.register(sig: {
         var s = MyEcs.Signature.initEmpty();
-        s.toggle(@intFromEnum(MyEcs.ComponentsEnum.somecomponent));
+        s.toggle(@intFromEnum(MyEcs.ComponentsEnum.othercomponent));
         break :sig s;
     });
+
+    // This is how component data can be added to entities
+    const someother: u32 = 5;
+    ecs.components.insert(MyEcs.ComponentsEnum.someothercomponent, entity_a.@"1", &someother);
+    const got = ecs.components.access(u32, MyEcs.ComponentsEnum.someothercomponent, entity_a.@"1") orelse @panic("Nothing at that index");
+    try std.testing.expectEqual(got.*, someother);
+    _ = ecs.components.remove(u32, MyEcs.ComponentsEnum.someothercomponent, entity_a.@"1") orelse @panic("nothing at that index");
+    const try_got = ecs.components.access(u32, MyEcs.ComponentsEnum.someothercomponent, entity_a.@"1");
+    try std.testing.expect(try_got == null);
+
     const entity_b = try ecs.entities.register(sig: {
         var s = MyEcs.Signature.initEmpty();
         s.toggle(@intFromEnum(MyEcs.ComponentsEnum.someothercomponent));
@@ -116,59 +125,138 @@ const Entity = u32;
 const Component = struct { [:0]const u8, type };
 
 pub fn ComponentsData(
+    MaxNEntities: comptime_int,
     comptime Components: []const Component,
 ) type {
     // each field is an array of the type passed for each component
     const N = Components.len;
-    const Fields: []Type.StructField = blk: {
-        var fields: [N]Type.StructField = undefined;
-        inline for (&fields, Components) |*f, c| {
-            // const FieldType = std.meta.Tuple{
-            //     [Components.len]?c.@"1",
-            //     usize,
-            // };
-            // var e: [Components.len]c.@"1" = undefined;
-            // @memset(&e,* );
-            // const empty = e;
 
-            f.* = Type.StructField{
+    // const Fields: []Type.StructField = blk: {
+    //     var fields: [N]Type.StructField = undefined;
+    //     inline for (&fields, Components) |*f, c| {
+    //         f.* = Type.StructField{
+    //             .name = c.@"0",
+    //             // .type = [Components.len]?c.@"1",
+    //             // .default_value_ptr = &@as([Components.len]?c.@"1", empty: {
+    //             //     var a: [Components.len]?c.@"1" = undefined;
+    //             //     @memset(&a, null);
+    //             //     break :empty a;
+    //             // }),
+    //             .type = [N]?*anyopaque,
+    //             .default_value_ptr = &@as([N]?*anyopaque, empty: {
+    //                 var a: [N]?*anyopaque = undefined;
+    //                 @memset(&a, null);
+    //                 break :empty a;
+    //             }),
+    //             .is_comptime = false,
+    //             .alignment = @alignOf(c.@"1"),
+    //         };
+    //     }
+    //     break :blk fields[0..];
+    // };
+
+    // const Inner = @Type(Type{ .@"struct" = Type.Struct{
+    //     .is_tuple = false,
+    //     .layout = Type.ContainerLayout.auto,
+    //     .fields = Fields,
+    //     .decls = @typeInfo(struct {}).@"struct".decls,
+    // } });
+
+    const ComponentTag, const TypeArr = blk: {
+        var fields: [N]Type.EnumField = undefined;
+        var types: [N]type = undefined;
+        @memset(&fields, Type.EnumField{
+            .name = "",
+            .value = 0,
+        });
+
+        for (0.., Components, &types) |i, c, *t| {
+            fields[i] = Type.EnumField{
                 .name = c.@"0",
-                .type = [Components.len]c.@"1",
-                .default_value_ptr = &@as([Components.len]c.@"1", undefined),
-                .is_comptime = false,
-                .alignment = @alignOf(c.@"1"),
+                .value = i,
             };
+            t.* = c.@"1";
         }
-        break :blk fields[0..];
+
+        break :blk .{ @Type(Type{ .@"enum" = .{
+            .tag_type = u32,
+            .fields = &fields,
+            .decls = &[_]Type.Declaration{},
+            .is_exhaustive = true,
+        } }), types };
     };
 
-    const Inner = @Type(Type{ .@"struct" = Type.Struct{
-        .is_tuple = false,
-        .layout = Type.ContainerLayout.auto,
-        .fields = Fields,
-        .decls = @typeInfo(struct {}).@"struct".decls,
-    } });
+    // const U = union(ComponentTag) {};
+    // const Fields: []Type.StructField = blk: {
+    //     var fields: [N]Type.StructField = undefined;
+    //     inline for (&fields, Components) |*f, c| {
+    //         f.* = Type.StructField{
+    //             .name = c.@"0",
+    //             // .type = [Components.len]?c.@"1",
+    //             // .default_value_ptr = &@as([Components.len]?c.@"1", empty: {
+    //             //     var a: [Components.len]?c.@"1" = undefined;
+    //             //     @memset(&a, null);
+    //             //     break :empty a;
+    //             // }),
+    //             .type = [N]?*anyopaque,
+    //             .default_value_ptr = &@as([N]?*anyopaque, empty: {
+    //                 var a: [N]?*anyopaque = undefined;
+    //                 @memset(&a, null);
+    //                 break :empty a;
+    //             }),
+    //             .is_comptime = false,
+    //             .alignment = @alignOf(c.@"1"),
+    //         };
+    //     }
+    //     break :blk fields[0..];
+    // };
 
     return struct {
-        inner: Inner,
+        const Enum = ComponentTag;
+        // inner: Inner,
+        arrays: [N][MaxNEntities]?*anyopaque,
+
+        const Error = error{Type};
+
+        inline fn tag_type(which: Enum) type {
+            return TypeArr[@intFromEnum(which)];
+        }
 
         pub fn init() @This() {
-            return @This(){ .inner = Inner{} };
+            return @This(){ .arrays = arr: {
+                var arr: [N][MaxNEntities]?*anyopaque = undefined;
+                @memset(&arr, inner: {
+                    var a: [MaxNEntities]?*anyopaque = undefined;
+                    @memset(&a, null);
+                    break :inner a;
+                });
+                break :arr arr;
+            } };
         }
-        // Appends to corresponding component array
-        // fn append()
+
+        /// expects to be passed `*const T` for `component`
+        pub fn insert(self: *@This(), which: Enum, idx: usize, component: anytype) void {
+            self.arrays[@intFromEnum(which)][idx] = @ptrCast(@constCast(component));
+        }
+
+        /// I dont love that this requires `T` be passed in
+        pub fn remove(self: *@This(), T: type, which: Enum, idx: usize) ?*T {
+            // if (TypeArr[@intFromEnum(which)] != T) {
+            //     return error.TypeMismatch;
+            // }
+            const val = self.arrays[@intFromEnum(which)][idx];
+            self.arrays[@intFromEnum(which)][idx] = null;
+            return @alignCast(@ptrCast(val));
+        }
+
+        pub fn access(self: *@This(), T: type, which: Enum, idx: usize) ?*T {
+            // if (TypeArr[@intFromEnum(which)] != T) {
+            //     return error.TypeMismatch;
+            // }
+            return @alignCast(@ptrCast(self.arrays[@intFromEnum(which)][idx]));
+        }
     };
 }
-
-// test "test component manager" {
-//     const Cm = ComponentManager(5, &[_]type{
-//         u32,
-//     });
-//     var cm = Cm.init();
-//     cm.inner.u32[0] = 5;
-
-//     try std.testing.expectEqual(5, cm.inner.u32[0]);
-// }
 
 fn System(comptime T: type, N: comptime_int, comptime updateFn: fn (self: T, state: anytype) void) type {
     return struct {
@@ -337,28 +425,12 @@ pub fn Ecs(
         const Signature = std.bit_set.IntegerBitSet(@intCast(Components.len));
         /// WIP!!
         const SystemFunction = *const fn (State) void;
-        const ComponentsEnum = blk: {
-            var fields: [Components.len]Type.EnumField = undefined;
-            @memset(&fields, Type.EnumField{
-                .name = "",
-                .value = 0,
-            });
-
-            for (0.., Components) |i, c| {
-                fields[i] = Type.EnumField{
-                    .name = c.@"0",
-                    .value = i,
-                };
-            }
-            break :blk @Type(Type{ .@"enum" = .{
-                .tag_type = u32,
-                .fields = &fields,
-                .decls = &[_]Type.Declaration{},
-                .is_exhaustive = true,
-            } });
-        };
+        const ComponentsManager =
+            ComponentsData(MaxNEntities, Components);
+        const ComponentsEnum = ComponentsManager.Enum;
         const EntityManager = IdentifierManager(MaxNEntities, Components.len);
         const SystemManager = IdentifierManager(MaxNSystems, Components.len);
+
         entities: EntityManager,
         systems: struct {
             manager: SystemManager,
@@ -368,7 +440,7 @@ pub fn Ecs(
                 break :s v;
             },
         },
-        components: ComponentsData(Components),
+        components: ComponentsManager,
 
         fn init(alloc: std.mem.Allocator) @This() {
             return @This(){
@@ -380,7 +452,7 @@ pub fn Ecs(
                     std.log.err("ERROR: {}", .{e});
                     @panic("Failed to init Entity Manager");
                 } },
-                .components = ComponentsData(Components).init(),
+                .components = ComponentsManager.init(),
             };
         }
 
