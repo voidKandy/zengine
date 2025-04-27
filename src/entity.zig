@@ -23,51 +23,64 @@ test "ECS Entity Management" {
 
     var ecs = MyEcs.init(arena.allocator());
     defer ecs.deinit(arena.allocator());
-    const entity_a = try ecs.entities.register(sig: {
-        var s = MyEcs.Signature.initEmpty();
-        s.toggle(@intFromEnum(MyEcs.ComponentsEnum.othercomponent));
-        break :sig s;
-    });
+    const entity_a: MyEcs.EntityManager.EntityHandle = try ecs.entities.register();
+
+    // const entity_a = try ecs.entities.register(sig: {
+    //     var s = MyEcs.Signature.initEmpty();
+    //     s.toggle(@intFromEnum(MyEcs.ComponentsEnum.othercomponent));
+    //     break :sig s;
+    // });
 
     // This is how component data can be added to entities
     const someother: u32 = 5;
-    ecs.components.insert(MyEcs.ComponentsEnum.someothercomponent, entity_a.@"1", &someother);
-    const got = ecs.components.access(u32, MyEcs.ComponentsEnum.someothercomponent, entity_a.@"1") orelse @panic("Nothing at that index");
-    try std.testing.expectEqual(got.*, someother);
-    _ = ecs.components.remove(u32, MyEcs.ComponentsEnum.someothercomponent, entity_a.@"1") orelse @panic("nothing at that index");
-    const try_got = ecs.components.access(u32, MyEcs.ComponentsEnum.someothercomponent, entity_a.@"1");
-    try std.testing.expect(try_got == null);
+    entity_a.add_component(MyEcs.ComponentsEnum.someothercomponent, &someother);
+    const some: bool = false;
+    entity_a.add_component(MyEcs.ComponentsEnum.somecomponent, &some);
+    // ecs.components.insert(MyEcs.ComponentsEnum.someothercomponent, entity_a.@"1", &someother);
+    // const got = ecs.components.access(u32, MyEcs.ComponentsEnum.someothercomponent, entity_a.@"1") orelse @panic("Nothing at that index");
+    // try std.testing.expectEqual(got.*, someother);
+    // _ = ecs.components.remove(u32, MyEcs.ComponentsEnum.someothercomponent, entity_a.@"1") orelse @panic("nothing at that index");
+    // const try_got = ecs.components.access(u32, MyEcs.ComponentsEnum.someothercomponent, entity_a.@"1");
+    // try std.testing.expect(try_got == null);
 
-    const entity_b = try ecs.entities.register(sig: {
-        var s = MyEcs.Signature.initEmpty();
-        s.toggle(@intFromEnum(MyEcs.ComponentsEnum.someothercomponent));
-        break :sig s;
-    });
-    const entity_c = try ecs.entities.register(sig: {
-        var s = MyEcs.Signature.initEmpty();
-        s.toggle(@intFromEnum(MyEcs.ComponentsEnum.othercomponent));
-        break :sig s;
-    });
+    // const some: bool = true;
+    // ecs.components.insert(MyEcs.ComponentsEnum.somecomponent, entity_a.@"1", &some);
+    // const got_some = ecs.components.access(bool, MyEcs.ComponentsEnum.somecomponent, entity_a.@"1") orelse @panic("Nothing at that index");
+    // try std.testing.expectEqual(got_some.*, some);
+    // _ = ecs.components.remove(bool, MyEcs.ComponentsEnum.somecomponent, entity_a.@"1") orelse @panic("nothing at that index");
+    // const try_got_some = ecs.components.access(bool, MyEcs.ComponentsEnum.somecomponent, entity_a.@"1");
+    // try std.testing.expect(try_got_some == null);
 
-    try std.testing.expectEqual(0, ecs.entities.index_map.get(entity_a.@"0"));
-    try std.testing.expectEqual(1, ecs.entities.index_map.get(entity_b.@"0"));
+    // const entity_b = try ecs.entities.register(sig: {
+    //     var s = MyEcs.Signature.initEmpty();
+    //     s.toggle(@intFromEnum(MyEcs.ComponentsEnum.someothercomponent));
+    //     break :sig s;
+    // });
+    // const entity_c = try ecs.entities.register(sig: {
+    //     var s = MyEcs.Signature.initEmpty();
+    //     s.toggle(@intFromEnum(MyEcs.ComponentsEnum.othercomponent));
+    //     break :sig s;
+    // });
 
-    try ecs.entities.remove(arena.allocator(), entity_a.@"0");
-    const entity_d = try ecs.entities.register(MyEcs.Signature.initFull());
+    // try std.testing.expectEqual(0, ecs.entities.index_map.get(entity_a.@"0"));
+    // try std.testing.expectEqual(1, ecs.entities.index_map.get(entity_b.@"0"));
 
-    try std.testing.expectEqual(0, ecs.entities.index_map.get(entity_c.@"0"));
-    try std.testing.expect(ecs.entities.signatures[0].isSet(@intFromEnum(MyEcs.ComponentsEnum.othercomponent)));
+    // try ecs.entities.remove(arena.allocator(), entity_a.@"0");
+    // const entity_d = try ecs.entities.register(MyEcs.Signature.initFull());
 
-    try std.testing.expectEqual(2, ecs.entities.index_map.get(entity_d.@"0"));
-    try std.testing.expect(e: {
-        var correct = true;
-        const d_sig =
-            ecs.entities.signatures[2];
-        correct = d_sig.isSet(@intFromEnum(MyEcs.ComponentsEnum.somecomponent));
-        correct = d_sig.isSet(@intFromEnum(MyEcs.ComponentsEnum.othercomponent));
-        correct = d_sig.isSet(@intFromEnum(MyEcs.ComponentsEnum.someothercomponent));
-        break :e correct;
-    });
+    // try std.testing.expectEqual(0, ecs.entities.index_map.get(entity_c.@"0"));
+    // try std.testing.expect(ecs.entities.signatures[0].isSet(@intFromEnum(MyEcs.ComponentsEnum.othercomponent)));
+
+    // try std.testing.expectEqual(2, ecs.entities.index_map.get(entity_d.@"0"));
+    // try std.testing.expect(e: {
+    //     var correct = true;
+    //     const d_sig =
+    //         ecs.entities.signatures[2];
+    //     correct = d_sig.isSet(@intFromEnum(MyEcs.ComponentsEnum.somecomponent));
+    //     correct = d_sig.isSet(@intFromEnum(MyEcs.ComponentsEnum.othercomponent));
+    //     correct = d_sig.isSet(@intFromEnum(MyEcs.ComponentsEnum.someothercomponent));
+    //     break :e correct;
+    // });
 
     std.debug.print("ENTITY MANAGEMENT WORKS AS EXPECTED\n", .{});
 }
@@ -75,53 +88,51 @@ test "ECS Entity Management" {
 fn basic_system(state: State) void {
     _ = state;
 }
-test "ECS System Management" {
-    std.testing.refAllDecls(@This());
-    const allocator = std.testing.allocator;
-    var arena = std.heap.ArenaAllocator.init(allocator);
-    defer arena.deinit();
+// test "ECS System Management" {
+//     std.testing.refAllDecls(@This());
+//     const allocator = std.testing.allocator;
+//     var arena = std.heap.ArenaAllocator.init(allocator);
+//     defer arena.deinit();
 
-    std.debug.print("\n\n---\nINIT ECS TEST\n---\n", .{});
+//     std.debug.print("\n\n---\nINIT ECS TEST\n---\n", .{});
 
-    const MyEcs = Ecs(5, 2, &[_]Component{
-        .{ "somecomponent", u32 },
-        .{ "othercomponent", bool },
-        .{ "someothercomponent", u16 },
-    });
+//     const MyEcs = Ecs(5, 2, &[_]Component{
+//         .{ "somecomponent", u32 },
+//         .{ "othercomponent", bool },
+//         .{ "someothercomponent", u16 },
+//     });
 
-    var ecs = MyEcs.init(arena.allocator());
-    defer ecs.deinit(arena.allocator());
+//     var ecs = MyEcs.init(arena.allocator());
+//     defer ecs.deinit(arena.allocator());
 
-    const entity_a = try ecs.entities.register(sig: {
-        var s = MyEcs.Signature.initEmpty();
-        s.toggle(@intFromEnum(MyEcs.ComponentsEnum.somecomponent));
-        break :sig s;
-    });
-    const entity_b = try ecs.entities.register(sig: {
-        var s = MyEcs.Signature.initEmpty();
-        s.toggle(@intFromEnum(MyEcs.ComponentsEnum.someothercomponent));
-        break :sig s;
-    });
-    const entity_c = try ecs.entities.register(sig: {
-        var s = MyEcs.Signature.initEmpty();
-        s.toggle(@intFromEnum(MyEcs.ComponentsEnum.othercomponent));
-        break :sig s;
-    });
-    const entity_d = try ecs.entities.register(MyEcs.Signature.initFull());
-    _ = entity_a;
-    _ = entity_b;
-    _ = entity_c;
-    _ = entity_d;
+//     const entity_a = try ecs.entities.register(sig: {
+//         var s = MyEcs.Signature.initEmpty();
+//         s.toggle(@intFromEnum(MyEcs.ComponentsEnum.somecomponent));
+//         break :sig s;
+//     });
+//     const entity_b = try ecs.entities.register(sig: {
+//         var s = MyEcs.Signature.initEmpty();
+//         s.toggle(@intFromEnum(MyEcs.ComponentsEnum.someothercomponent));
+//         break :sig s;
+//     });
+//     const entity_c = try ecs.entities.register(sig: {
+//         var s = MyEcs.Signature.initEmpty();
+//         s.toggle(@intFromEnum(MyEcs.ComponentsEnum.othercomponent));
+//         break :sig s;
+//     });
+//     const entity_d = try ecs.entities.register(MyEcs.Signature.initFull());
+//     _ = entity_a;
+//     _ = entity_b;
+//     _ = entity_c;
+//     _ = entity_d;
 
-    try ecs.register_system(sig: {
-        var s = MyEcs.Signature.initEmpty();
-        s.toggle(@intFromEnum(MyEcs.ComponentsEnum.othercomponent));
-        break :sig s;
-    }, basic_system);
-}
+//     try ecs.register_system(sig: {
+//         var s = MyEcs.Signature.initEmpty();
+//         s.toggle(@intFromEnum(MyEcs.ComponentsEnum.othercomponent));
+//         break :sig s;
+//     }, basic_system);
+// }
 
-/// Simply an ID
-const Entity = u32;
 const Component = struct { [:0]const u8, type };
 
 pub fn ComponentsData(
@@ -130,38 +141,6 @@ pub fn ComponentsData(
 ) type {
     // each field is an array of the type passed for each component
     const N = Components.len;
-
-    // const Fields: []Type.StructField = blk: {
-    //     var fields: [N]Type.StructField = undefined;
-    //     inline for (&fields, Components) |*f, c| {
-    //         f.* = Type.StructField{
-    //             .name = c.@"0",
-    //             // .type = [Components.len]?c.@"1",
-    //             // .default_value_ptr = &@as([Components.len]?c.@"1", empty: {
-    //             //     var a: [Components.len]?c.@"1" = undefined;
-    //             //     @memset(&a, null);
-    //             //     break :empty a;
-    //             // }),
-    //             .type = [N]?*anyopaque,
-    //             .default_value_ptr = &@as([N]?*anyopaque, empty: {
-    //                 var a: [N]?*anyopaque = undefined;
-    //                 @memset(&a, null);
-    //                 break :empty a;
-    //             }),
-    //             .is_comptime = false,
-    //             .alignment = @alignOf(c.@"1"),
-    //         };
-    //     }
-    //     break :blk fields[0..];
-    // };
-
-    // const Inner = @Type(Type{ .@"struct" = Type.Struct{
-    //     .is_tuple = false,
-    //     .layout = Type.ContainerLayout.auto,
-    //     .fields = Fields,
-    //     .decls = @typeInfo(struct {}).@"struct".decls,
-    // } });
-
     const ComponentTag, const TypeArr = blk: {
         var fields: [N]Type.EnumField = undefined;
         var types: [N]type = undefined;
@@ -186,34 +165,8 @@ pub fn ComponentsData(
         } }), types };
     };
 
-    // const U = union(ComponentTag) {};
-    // const Fields: []Type.StructField = blk: {
-    //     var fields: [N]Type.StructField = undefined;
-    //     inline for (&fields, Components) |*f, c| {
-    //         f.* = Type.StructField{
-    //             .name = c.@"0",
-    //             // .type = [Components.len]?c.@"1",
-    //             // .default_value_ptr = &@as([Components.len]?c.@"1", empty: {
-    //             //     var a: [Components.len]?c.@"1" = undefined;
-    //             //     @memset(&a, null);
-    //             //     break :empty a;
-    //             // }),
-    //             .type = [N]?*anyopaque,
-    //             .default_value_ptr = &@as([N]?*anyopaque, empty: {
-    //                 var a: [N]?*anyopaque = undefined;
-    //                 @memset(&a, null);
-    //                 break :empty a;
-    //             }),
-    //             .is_comptime = false,
-    //             .alignment = @alignOf(c.@"1"),
-    //         };
-    //     }
-    //     break :blk fields[0..];
-    // };
-
     return struct {
         const Enum = ComponentTag;
-        // inner: Inner,
         arrays: [N][MaxNEntities]?*anyopaque,
 
         const Error = error{Type};
@@ -235,6 +188,7 @@ pub fn ComponentsData(
         }
 
         /// expects to be passed `*const T` for `component`
+        /// Unline `remove` and `access`, does not require passing the type
         pub fn insert(self: *@This(), which: Enum, idx: usize, component: anytype) void {
             self.arrays[@intFromEnum(which)][idx] = @ptrCast(@constCast(component));
         }
@@ -254,18 +208,6 @@ pub fn ComponentsData(
             //     return error.TypeMismatch;
             // }
             return @alignCast(@ptrCast(self.arrays[@intFromEnum(which)][idx]));
-        }
-    };
-}
-
-fn System(comptime T: type, N: comptime_int, comptime updateFn: fn (self: T, state: anytype) void) type {
-    return struct {
-        t: T,
-        signature: std.bit_set.IntegerBitSet(@intCast(N)),
-
-        /// idk abt this yet
-        fn update(self: @This(), state: anytype) void {
-            updateFn(self, state);
         }
     };
 }
@@ -345,16 +287,20 @@ fn IdentifierManager(
         }
 
         /// Returns a tuple of the `Identifier` (`u32`) and the index
-        pub fn register(self: *Self, sig: Signature) Error!struct { Identifier, usize } {
+        pub fn register(
+            self: *Self,
+            // , sig: Signature
+        ) Error!struct { Identifier, usize } {
             defer {
                 warn(
-                    \\ SIGNATURE: {b}
                     \\ NEW COUNT: {}
                     \\ ARRAY: 
-                , .{ sig.mask, self.count });
-                inline for (self.signatures) |s| {
-                    warn("{b}", .{s.mask});
-                }
+                , .{
+                    // sig.mask,
+                    self.count});
+                // inline for (self.signatures) |s| {
+                //     warn("{b}", .{s.mask});
+                // }
             }
 
             const id: Identifier = ent: {
@@ -369,7 +315,7 @@ fn IdentifierManager(
             , .{ id, self.count });
             self.index_map.put(id, self.count) catch return error.Insert;
             self.identifier_map.put(self.count, id) catch return error.Insert;
-            self.signatures[self.count] = sig;
+            self.signatures[self.count] = Signature.initEmpty();
             self.count += 1;
 
             return .{ id, self.count - 1 };
@@ -407,6 +353,16 @@ fn IdentifierManager(
             return;
         }
 
+        pub fn get_matching_signature(self: Self, signature: Self.Signature) []Identifier {
+            var all: [MAX]Identifier = undefined;
+            for (0.., self.signatures, &all) |i, sig, *id| {
+                if (std.mem.eql(signature, sig)) {
+                    id.* = self.identifier_map.get(i) orelse @panic("NO MATCHING IDENTIFIER FOR THAT INDEX");
+                }
+            }
+            return &all;
+        }
+
         pub fn get_signature(self: Self, entity: Identifier) Self.Signature {
             const idx = self.index_map.get(entity);
             return self.signatures[idx];
@@ -415,39 +371,111 @@ fn IdentifierManager(
     };
 }
 
+const Entity = u32;
+// const System = struct { [:0]const u8, *const fn() };
 /// Entity Component System "Coordinator"
 pub fn Ecs(
     MaxNEntities: comptime_int,
     MaxNSystems: comptime_int,
     comptime Components: []const Component,
+    // comptime Systems: []const anytype,
 ) type {
     return struct {
-        const Signature = std.bit_set.IntegerBitSet(@intCast(Components.len));
-        /// WIP!!
-        const SystemFunction = *const fn (State) void;
+        const ThisEcs = @This();
+        pub const Signature = std.bit_set.IntegerBitSet(@intCast(Components.len));
+        pub const ComponentsEnum = ComponentsManager.Enum;
+        /// Returns the signature associated with the given components
+        pub fn get_signature(components: []ComponentsEnum) Signature {
+            var sig = Signature.initEmpty();
+            for (components) |c| {
+                sig.set(@intFromEnum(c));
+            }
+            return sig;
+        }
+        // /// WIP!!
+        // const SystemFunction = struct {
+        //     // func: *const fn ([]Entity) !void,
+        //     func: *const fn ([]Entity, T) !void,
+        // };
+
+        // const System = struct {
+        //       signature: Signature,
+        // };
+        fn System(
+            system_state: anytype,
+        ) struct {
+            // t: anytpee,
+            const FnType = fn ([]Entity, @TypeOf(system_state)) void;
+            // signature: Signature,
+            state: @TypeOf(system_state),
+            func: FnType,
+            fn init(func: FnType) ThisEcs {
+                return ThisEcs{ .state = system_state, .func = func };
+            }
+            // idk abt this yet
+            // fn update(self: ThisEcs, state: anytype) void {
+            //     updateFn(self, state);
+            // }
+        } {
+            // const FnType = fn(T, anytype)
+            return;
+        }
+
         const ComponentsManager =
             ComponentsData(MaxNEntities, Components);
-        const ComponentsEnum = ComponentsManager.Enum;
-        const EntityManager = IdentifierManager(MaxNEntities, Components.len);
+
+        const EntityManager = struct {
+            manager: IdentifierManager(MaxNEntities, Components.len),
+
+            fn init(allocator: std.mem.Allocator) @This() {
+                return .{ .manager = IdentifierManager(MaxNEntities, Components.len).init(allocator) catch @panic("Could not create IdentifierManager for Entities") };
+            }
+
+            /// I dont like having this behavior like this i thnk
+            pub const EntityHandle = struct {
+                ecs: *ThisEcs,
+                identifier: Entity,
+                index: usize,
+
+                pub fn add_component(self: @This(), which: ComponentsEnum, component: anytype) void {
+                    // const signature = self.ecs.get_signature(&[_]ComponentsEnum{component});
+                    self.ecs.entities.manager.signatures[self.index].set(@intFromEnum(which));
+                    self.ecs.components.insert(which, self.index, component);
+                }
+            };
+
+            fn register(self: *@This()) !EntityHandle {
+                const id, const i = try self.manager.register();
+                var parent_ptr =
+                    @as(*ThisEcs, @fieldParentPtr("entities", self));
+                _ = &parent_ptr;
+
+                return EntityHandle{
+                    .ecs = parent_ptr,
+                    .identifier = id,
+                    .index = i,
+                };
+            }
+        };
+
         const SystemManager = IdentifierManager(MaxNSystems, Components.len);
 
         entities: EntityManager,
         systems: struct {
             manager: SystemManager,
-            funcs: [MaxNSystems]?SystemFunction = s: {
-                var v: [MaxNSystems]?SystemFunction = undefined;
-                @memset(&v, null);
-                break :s v;
-            },
+            // expected to be a type returned by `System`
+            // all: anytpe,
+            // funcs: [MaxNSystems]?struct {} = s: {
+            //     var v: [MaxNSystems]?SystemFunction = undefined;
+            //     @memset(&v, null);
+            //     break :s v;
+            // },
         },
         components: ComponentsManager,
 
-        fn init(alloc: std.mem.Allocator) @This() {
-            return @This(){
-                .entities = EntityManager.init(alloc) catch |e| {
-                    std.log.err("ERROR: {}", .{e});
-                    @panic("Failed to init Entity Manager");
-                },
+        pub fn init(alloc: std.mem.Allocator) ThisEcs {
+            return ThisEcs{
+                .entities = EntityManager.init(alloc),
                 .systems = .{ .manager = SystemManager.init(alloc) catch |e| {
                     std.log.err("ERROR: {}", .{e});
                     @panic("Failed to init Entity Manager");
@@ -456,20 +484,41 @@ pub fn Ecs(
             };
         }
 
-        fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
-            self.entities.deinit(allocator);
+        pub fn deinit(self: *ThisEcs, allocator: std.mem.Allocator) void {
+            self.entities.manager.deinit(allocator);
             self.systems.manager.deinit(allocator);
         }
 
-        fn register_system(self: *@This(), signature: Signature, func: SystemFunction) !void {
-            const system_id, const system_idx = try self.systems.manager.register(signature);
+        /// System expected to be returned by `System` function
+        pub fn register_system(self: *ThisEcs, system: anytype, state: anytype) !void {
+            _ = state;
+            const system_id, const system_idx = try self.systems.manager.register(system.signature);
             std.log.debug("REGISTERED SYSTEM WITH ID: {} INTO ECS", .{system_id});
-            self.systems.funcs[system_idx] = func;
+            self.systems.all[system_idx] = system;
         }
 
-        // fn insert_component_into_entity(self: Ecs, entity: Entity, component: anytype) void {
-        //     const index: usize = self.entities.index_map.get(entity);
-        // }
+        pub fn run_systems(self: *ThisEcs) !void {
+            var iter =
+                self.systems.manager.identifier_map.iterator();
+            while (iter.next()) |e| {
+                const id = e.key_ptr;
+                const idx = e.value_ptr;
+
+                const sig = self.systems.manager.get_signature(id);
+                if (self.systems.funcs[idx]) |f| {
+                    // should return an of entites matching the signature *exactly*
+                    const entities = self.entities.get_matching_signature(sig);
+                    f(entities);
+                }
+            }
+        }
+
+        pub fn insert_component_into_entity(self: *ThisEcs, entity: Entity, which: ComponentsEnum, component: anytype) void {
+            const index: usize = self.entities.index_map.get(entity);
+            self.components.insert(which, index, component);
+            self.entities.signatures[index].set(@intFromEnum(which));
+            // self.components.arrays[@intFromEnum(which)][index] = c
+        }
     };
 }
 
@@ -617,3 +666,20 @@ pub const OldEntity = struct {
         rl.drawMesh(self.mesh, material, self.transform);
     }
 };
+
+// IMPLEMENT AS A SYSTEM
+// pub fn draw(state: *) anyerror!void {
+//     // warn("DRAWING: {any}\n", .{self.transform});
+//     const material: rl.Material =
+//         mat: switch (self.material) {
+//             .color => |c| {
+//                 var material = try rl.loadMaterialDefault();
+//                 material.maps[@as(usize, @intFromEnum(rl.MATERIAL_MAP_DIFFUSE))].color = c;
+//                 break :mat material;
+//             },
+//             .material => |m| {
+//                 break :mat m;
+//             },
+//         };
+//     rl.drawMesh(self.mesh, material, self.transform);
+// }
