@@ -15,7 +15,7 @@ test "ECS Entity Management" {
 
     std.debug.print("\n\n---\nINIT ECS TEST\n---\n", .{});
 
-    const MyEcs = Ecs(5, 0, &[_]Component{
+    const MyEcs = Ecs(5, 5, &[_]Component{
         .{ "somecomponent", bool },
         .{ "othercomponent", u8 },
         .{ "someothercomponent", u32 },
@@ -36,6 +36,17 @@ test "ECS Entity Management" {
     entity_a.add_component(MyEcs.ComponentsEnum.someothercomponent, &someother);
     const some: bool = false;
     entity_a.add_component(MyEcs.ComponentsEnum.somecomponent, &some);
+
+    // const SomeSystemState = struct { enabled: bool };
+    const SomeSystem = MyEcs.System(&[_]MyEcs.ComponentsEnum{MyEcs.ComponentsEnum.somecomponent}, struct {
+        fn run(entities: []Entity, myecs: *MyEcs) void {
+            _ = myecs;
+            _ = entities;
+        }
+    }.run);
+
+    // this is how systems can be registered
+    try ecs.systems.register_system(SomeSystem{});
     // ecs.components.insert(MyEcs.ComponentsEnum.someothercomponent, entity_a.@"1", &someother);
     // const got = ecs.components.access(u32, MyEcs.ComponentsEnum.someothercomponent, entity_a.@"1") orelse @panic("Nothing at that index");
     // try std.testing.expectEqual(got.*, someother);
@@ -85,9 +96,6 @@ test "ECS Entity Management" {
     std.debug.print("ENTITY MANAGEMENT WORKS AS EXPECTED\n", .{});
 }
 
-fn basic_system(state: State) void {
-    _ = state;
-}
 // test "ECS System Management" {
 //     std.testing.refAllDecls(@This());
 //     const allocator = std.testing.allocator;
@@ -232,10 +240,14 @@ fn IdentifierManager(
         };
 
         available_ids: *IdQueue.Node,
-        signatures: [MAX]Signature,
         index_map: std.AutoHashMap(Identifier, usize),
         identifier_map: std.AutoHashMap(usize, Identifier),
         count: usize,
+        signatures: [MAX]Signature = initsigs: {
+            var signatures: [MAX]Signature = undefined;
+            @memset(&signatures, Signature.initEmpty());
+            break :initsigs signatures;
+        },
 
         /// requires the same allocator be passed as with `init`
         pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
@@ -272,14 +284,10 @@ fn IdentifierManager(
                 current = node;
             }
 
-            var signatures: [MAX]Signature = undefined;
-            @memset(&signatures, Signature.initEmpty());
-
             const idx_map = std.AutoHashMap(Identifier, usize).init(allocator);
             const ent_map = std.AutoHashMap(usize, Identifier).init(allocator);
             return Self{
                 .available_ids = head,
-                .signatures = signatures,
                 .index_map = idx_map,
                 .identifier_map = ent_map,
                 .count = 0,
@@ -289,7 +297,6 @@ fn IdentifierManager(
         /// Returns a tuple of the `Identifier` (`u32`) and the index
         pub fn register(
             self: *Self,
-            // , sig: Signature
         ) Error!struct { Identifier, usize } {
             defer {
                 warn(
@@ -315,7 +322,7 @@ fn IdentifierManager(
             , .{ id, self.count });
             self.index_map.put(id, self.count) catch return error.Insert;
             self.identifier_map.put(self.count, id) catch return error.Insert;
-            self.signatures[self.count] = Signature.initEmpty();
+            // self.signatures[self.count] = Signature.initEmpty();
             self.count += 1;
 
             return .{ id, self.count - 1 };
@@ -378,8 +385,10 @@ pub fn Ecs(
     MaxNEntities: comptime_int,
     MaxNSystems: comptime_int,
     comptime Components: []const Component,
-    // comptime Systems: []const anytype,
 ) type {
+    if (MaxNEntities == 0 or MaxNSystems == 0) {
+        @compileError("Set MaxNEntities & MaxNSystems to at least 1!");
+    }
     return struct {
         const ThisEcs = @This();
         pub const Signature = std.bit_set.IntegerBitSet(@intCast(Components.len));
@@ -392,34 +401,6 @@ pub fn Ecs(
             }
             return sig;
         }
-        // /// WIP!!
-        // const SystemFunction = struct {
-        //     // func: *const fn ([]Entity) !void,
-        //     func: *const fn ([]Entity, T) !void,
-        // };
-
-        // const System = struct {
-        //       signature: Signature,
-        // };
-        fn System(
-            system_state: anytype,
-        ) struct {
-            // t: anytpee,
-            const FnType = fn ([]Entity, @TypeOf(system_state)) void;
-            // signature: Signature,
-            state: @TypeOf(system_state),
-            func: FnType,
-            fn init(func: FnType) ThisEcs {
-                return ThisEcs{ .state = system_state, .func = func };
-            }
-            // idk abt this yet
-            // fn update(self: ThisEcs, state: anytype) void {
-            //     updateFn(self, state);
-            // }
-        } {
-            // const FnType = fn(T, anytype)
-            return;
-        }
 
         const ComponentsManager =
             ComponentsData(MaxNEntities, Components);
@@ -431,7 +412,7 @@ pub fn Ecs(
                 return .{ .manager = IdentifierManager(MaxNEntities, Components.len).init(allocator) catch @panic("Could not create IdentifierManager for Entities") };
             }
 
-            /// I dont like having this behavior like this i thnk
+            /// I dont think I like having this behavior like this
             pub const EntityHandle = struct {
                 ecs: *ThisEcs,
                 identifier: Entity,
@@ -458,28 +439,52 @@ pub fn Ecs(
             }
         };
 
-        const SystemManager = IdentifierManager(MaxNSystems, Components.len);
+        const SystemFn = *const fn ([]Entity, *ThisEcs) void;
+
+        fn System(
+            components: []const ComponentsEnum,
+            _func: SystemFn,
+        ) type {
+            return struct {
+                func: SystemFn = _func,
+                signature: Signature = sig: {
+                    var s = Signature.initEmpty();
+                    for (components) |c| {
+                        s.set(@intFromEnum(c));
+                    }
+                    break :sig s;
+                },
+            };
+        }
+        const SystemManager = struct {
+            manager: IdentifierManager(MaxNSystems, Components.len),
+            all_sys_fns: [MaxNSystems]?SystemFn = a: {
+                var a: [MaxNSystems]?SystemFn = undefined;
+                @memset(&a, null);
+                break :a a;
+            },
+
+            pub fn init(allocator: std.mem.Allocator) @This() {
+                return .{ .manager = IdentifierManager(MaxNSystems, Components.len).init(allocator) catch @panic("Failed to crate id manager for systems") };
+            }
+            pub fn register_system(self: *@This(), system: anytype) !void {
+                const system_id, const system_idx = try self.manager.register();
+                // _ = system;
+                // _ = system_idx;
+                std.log.debug("REGISTERED SYSTEM WITH ID: {} INTO ECS", .{system_id});
+                self.manager.signatures[system_idx] = system.signature;
+                self.all_sys_fns[system_idx] = system.func;
+            }
+        };
 
         entities: EntityManager,
-        systems: struct {
-            manager: SystemManager,
-            // expected to be a type returned by `System`
-            // all: anytpe,
-            // funcs: [MaxNSystems]?struct {} = s: {
-            //     var v: [MaxNSystems]?SystemFunction = undefined;
-            //     @memset(&v, null);
-            //     break :s v;
-            // },
-        },
+        systems: SystemManager,
         components: ComponentsManager,
 
         pub fn init(alloc: std.mem.Allocator) ThisEcs {
             return ThisEcs{
                 .entities = EntityManager.init(alloc),
-                .systems = .{ .manager = SystemManager.init(alloc) catch |e| {
-                    std.log.err("ERROR: {}", .{e});
-                    @panic("Failed to init Entity Manager");
-                } },
+                .systems = SystemManager.init(alloc),
                 .components = ComponentsManager.init(),
             };
         }
@@ -489,29 +494,31 @@ pub fn Ecs(
             self.systems.manager.deinit(allocator);
         }
 
-        /// System expected to be returned by `System` function
-        pub fn register_system(self: *ThisEcs, system: anytype, state: anytype) !void {
-            _ = state;
-            const system_id, const system_idx = try self.systems.manager.register(system.signature);
-            std.log.debug("REGISTERED SYSTEM WITH ID: {} INTO ECS", .{system_id});
-            self.systems.all[system_idx] = system;
-        }
-
         pub fn run_systems(self: *ThisEcs) !void {
             var iter =
                 self.systems.manager.identifier_map.iterator();
             while (iter.next()) |e| {
-                const id = e.key_ptr;
-                const idx = e.value_ptr;
+                const id = e.value_ptr;
+                const idx = e.key_ptr;
 
                 const sig = self.systems.manager.get_signature(id);
-                if (self.systems.funcs[idx]) |f| {
-                    // should return an of entites matching the signature *exactly*
-                    const entities = self.entities.get_matching_signature(sig);
-                    f(entities);
+
+                const entities = self.entities.manager.get_matching_signature(sig);
+                if (self.systems.all_sys_fns[idx]) |func| {
+                    func(entities, self);
                 }
+                // const components = self.components.arrays
+
+                // if (self.systems.funcs[idx]) |f| {
+                // should return an of entites matching the signature *exactly*
+                // const entities = self.entities.get_matching_signature(sig);
+                // f(entities);
+
             }
         }
+
+        // pub fn get_components_by_signature(self: *ThisEcs, signature: ThisEcs.Signature) [] {
+        // }
 
         pub fn insert_component_into_entity(self: *ThisEcs, entity: Entity, which: ComponentsEnum, component: anytype) void {
             const index: usize = self.entities.index_map.get(entity);
