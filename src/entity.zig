@@ -37,9 +37,9 @@ test "ECS Entity Management" {
     const some: bool = false;
     entity_a.add_component(MyEcs.ComponentsEnum.somecomponent, &some);
 
-    // const SomeSystemState = struct { enabled: bool };
     const SomeSystem = MyEcs.System(&[_]MyEcs.ComponentsEnum{MyEcs.ComponentsEnum.somecomponent}, struct {
         fn run(entities: []Entity, myecs: *MyEcs) void {
+            std.log.warn("IN SOME SYSTEM\n", .{});
             _ = myecs;
             _ = entities;
         }
@@ -47,6 +47,7 @@ test "ECS Entity Management" {
 
     // this is how systems can be registered
     try ecs.systems.register_system(SomeSystem{});
+    try ecs.run_systems();
     // ecs.components.insert(MyEcs.ComponentsEnum.someothercomponent, entity_a.@"1", &someother);
     // const got = ecs.components.access(u32, MyEcs.ComponentsEnum.someothercomponent, entity_a.@"1") orelse @panic("Nothing at that index");
     // try std.testing.expectEqual(got.*, someother);
@@ -363,15 +364,15 @@ fn IdentifierManager(
         pub fn get_matching_signature(self: Self, signature: Self.Signature) []Identifier {
             var all: [MAX]Identifier = undefined;
             for (0.., self.signatures, &all) |i, sig, *id| {
-                if (std.mem.eql(signature, sig)) {
+                if (signature.eql(sig)) {
                     id.* = self.identifier_map.get(i) orelse @panic("NO MATCHING IDENTIFIER FOR THAT INDEX");
                 }
             }
             return &all;
         }
 
-        pub fn get_signature(self: Self, entity: Identifier) Self.Signature {
-            const idx = self.index_map.get(entity);
+        pub fn get_signature(self: Self, entity: Identifier) ?Self.Signature {
+            const idx = self.index_map.get(entity) orelse return null;
             return self.signatures[idx];
         }
         // fn register_component_for_entity(self: *Self, entity: Identifier, component: anytype) void {}
@@ -501,12 +502,13 @@ pub fn Ecs(
                 const id = e.value_ptr;
                 const idx = e.key_ptr;
 
-                const sig = self.systems.manager.get_signature(id);
-
-                const entities = self.entities.manager.get_matching_signature(sig);
-                if (self.systems.all_sys_fns[idx]) |func| {
-                    func(entities, self);
+                if (self.systems.manager.get_signature(id.*)) |sig| {
+                    const entities = self.entities.manager.get_matching_signature(sig);
+                    if (self.systems.all_sys_fns[idx.*]) |func| {
+                        func(entities, self);
+                    }
                 }
+
                 // const components = self.components.arrays
 
                 // if (self.systems.funcs[idx]) |f| {
