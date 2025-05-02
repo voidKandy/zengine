@@ -4,12 +4,12 @@ const rl = @import("raylib");
 const std = @import("std");
 const zbt = @import("zbullet");
 
-pub const EntityArray =
-    core.da.DynamicArray(core.entity.OldEntity, 5);
+// pub const EntityArray =
+//     core.da.DynamicArray(core.entity.OldEntity, 5);
 pub const State = struct {
     window_height: f32,
     window_width: f32,
-    entities: EntityArray,
+    // entities: EntityArray,
     // component_entites: core.entity.OldEntity.Storage,
     camera: rl.Camera3D,
     mouse: struct {

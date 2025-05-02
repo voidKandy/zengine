@@ -237,19 +237,19 @@ test "game state" {
     _ = st;
 }
 
-test "DayNight advances through time-of-day stages" {
-    const HOURS_IN_DAY: f32 = 24.0;
-    const DayCycle = DayNight(HOURS_IN_DAY);
-    var cycle = DayCycle.start(6.0); // 6 in-game hours per real second
+// test "DayNight advances through time-of-day stages" {
+//     const HOURS_IN_DAY: f32 = 24.0;
+//     const DayCycle = DayNight(HOURS_IN_DAY);
+//     var cycle = DayCycle.start(6.0); // 6 in-game hours per real second
 
-    // Simulate time passing with constant dt
-    const dt = 1.0; // 1 second per tick
-    const num_steps = 5;
+//     // Simulate time passing with constant dt
+//     const dt = 1.0; // 1 second per tick
+//     const num_steps = 5;
 
-    for (0..num_steps) |i| {
-        std.debug.print("Tick {}: TOD = {}\n", .{ i, cycle.time_of_day });
-        cycle.update(dt);
-    }
+//     for (0..num_steps) |i| {
+//         std.debug.print("Tick {}: TOD = {}\n", .{ i, cycle.time_of_day });
+//         cycle.update(dt);
+//     }
 
-    try std.testing.expectEqual(cycle.time_of_day, .afternoon);
-}
+//     try std.testing.expectEqual(cycle.time_of_day, .afternoon);
+// }

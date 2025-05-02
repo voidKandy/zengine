@@ -4,7 +4,6 @@ const zbt = @import("zbullet");
 const core = @import("root.zig");
 const warn = std.log.warn;
 const Type = std.builtin.Type;
-const State = core.state.State;
 const Shape = zbt.Shape;
 
 test "ECS Entity Management" {
@@ -13,9 +12,14 @@ test "ECS Entity Management" {
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
 
-    std.debug.print("\n\n---\nINIT ECS TEST\n---\n", .{});
+    std.debug.print(
+        \\
+        \\ ---INIT ECS TEST---
+        \\
+    , .{});
 
-    const MyEcs = Ecs(5, 5, &[_]Component{
+    const State = struct {};
+    const MyEcs = Ecs(5, 5, State, &[_]Component{
         .{ "somecomponent", bool },
         .{ "othercomponent", u8 },
         .{ "someothercomponent", u32 },
@@ -23,126 +27,107 @@ test "ECS Entity Management" {
 
     var ecs = MyEcs.init(arena.allocator());
     defer ecs.deinit(arena.allocator());
-    const entity_a: MyEcs.EntityManager.EntityHandle = try ecs.entities.register();
 
-    // const entity_a = try ecs.entities.register(sig: {
-    //     var s = MyEcs.Signature.initEmpty();
-    //     s.toggle(@intFromEnum(MyEcs.ComponentsEnum.othercomponent));
-    //     break :sig s;
-    // });
+    // Entity Initialization
+    // ---
+    const entity_a: MyEcs.EntityManager.EntityHandle = a: {
+        var handle = try ecs.entities.register();
+        const someother: u32 = 5;
+        handle.add_component(MyEcs.ComponentsEnum.someothercomponent, &someother);
+        const some: bool = false;
+        handle.add_component(MyEcs.ComponentsEnum.somecomponent, &some);
+        break :a handle;
+    };
 
-    // This is how component data can be added to entities
-    const someother: u32 = 5;
-    entity_a.add_component(MyEcs.ComponentsEnum.someothercomponent, &someother);
-    const some: bool = false;
-    entity_a.add_component(MyEcs.ComponentsEnum.somecomponent, &some);
+    const entity_b: MyEcs.EntityManager.EntityHandle = a: {
+        var handle = try ecs.entities.register();
+        const someother: u32 = 7;
+        handle.add_component(MyEcs.ComponentsEnum.someothercomponent, &someother);
+        const some: bool = true;
+        handle.add_component(MyEcs.ComponentsEnum.somecomponent, &some);
+        break :a handle;
+    };
 
+    const entity_c: MyEcs.EntityManager.EntityHandle = a: {
+        const handle = try ecs.entities.register();
+        break :a handle;
+    };
+
+    // Entity Component Validation
+    // ---
+    {
+        const got = ecs.components.access(u32, MyEcs.ComponentsEnum.someothercomponent, entity_a.index().?) orelse @panic("Nothing at that index");
+        try std.testing.expectEqual(got.*, 5);
+    }
+    {
+        const got = ecs.components.access(bool, MyEcs.ComponentsEnum.somecomponent, entity_a.index().?) orelse @panic("Nothing at that index");
+        try std.testing.expectEqual(got.*, false);
+    }
+    {
+        const got = ecs.components.access(u32, MyEcs.ComponentsEnum.someothercomponent, entity_b.index().?) orelse @panic("Nothing at that index");
+        try std.testing.expectEqual(got.*, 7);
+    }
+    {
+        const got = ecs.components.access(bool, MyEcs.ComponentsEnum.somecomponent, entity_b.index().?) orelse @panic("Nothing at that index");
+        try std.testing.expectEqual(got.*, true);
+    }
+    {
+        const got = ecs.components.access(bool, MyEcs.ComponentsEnum.somecomponent, entity_c.index().?);
+        try std.testing.expect(got == null);
+    }
+
+    var all: [5]Entity = undefined;
+    @memset(&all, 0);
+
+    const matching = ecs.entities.manager.getBySignatureExact(&all, s: {
+        var s = MyEcs.Signature.initEmpty();
+        s.set(@intFromEnum(MyEcs.ComponentsEnum.somecomponent));
+        s.set(@intFromEnum(MyEcs.ComponentsEnum.someothercomponent));
+        break :s s;
+    }) orelse @panic("should have got some matching entities");
+
+    std.log.warn("got matching: {any}\n", .{matching});
+    try std.testing.expect(std.mem.containsAtLeastScalar(Entity, matching, 1, entity_a.identifier));
+    try std.testing.expect(std.mem.containsAtLeastScalar(Entity, matching, 1, entity_b.identifier));
+
+    // Component Removal
+    // ---
+    {
+        const removed = ecs.components.remove(bool, MyEcs.ComponentsEnum.somecomponent, entity_a.index().?) orelse @panic("nothing at that index");
+        try std.testing.expectEqual(removed.*, false);
+        try std.testing.expect(ecs.components.access(bool, MyEcs.ComponentsEnum.somecomponent, entity_a.index().?) == null);
+    }
+
+    // Entity Index Storage
+    // ---
+    try std.testing.expectEqual(0, ecs.entities.manager.index_map.get(entity_a.identifier));
+    try std.testing.expectEqual(1, ecs.entities.manager.index_map.get(entity_b.identifier));
+    try std.testing.expectEqual(2, ecs.entities.manager.index_map.get(entity_c.identifier));
+
+    try ecs.entities.manager.remove(arena.allocator(), entity_a.identifier);
+    try std.testing.expectEqual(0, ecs.entities.manager.index_map.get(entity_c.identifier));
+    try std.testing.expectEqual(0, entity_c.index().?);
+
+    // Systems
+    // ---
     const SomeSystem = MyEcs.System(&[_]MyEcs.ComponentsEnum{MyEcs.ComponentsEnum.somecomponent}, struct {
-        fn run(entities: []Entity, myecs: *MyEcs) void {
+        fn run(entities: []Entity, myecs: *MyEcs, state: *State) void {
             std.log.warn("IN SOME SYSTEM\n", .{});
+            _ = state;
             _ = myecs;
             _ = entities;
         }
     }.run);
 
-    // this is how systems can be registered
     try ecs.systems.register_system(SomeSystem{});
-    try ecs.run_systems();
-    // ecs.components.insert(MyEcs.ComponentsEnum.someothercomponent, entity_a.@"1", &someother);
-    // const got = ecs.components.access(u32, MyEcs.ComponentsEnum.someothercomponent, entity_a.@"1") orelse @panic("Nothing at that index");
-    // try std.testing.expectEqual(got.*, someother);
-    // _ = ecs.components.remove(u32, MyEcs.ComponentsEnum.someothercomponent, entity_a.@"1") orelse @panic("nothing at that index");
-    // const try_got = ecs.components.access(u32, MyEcs.ComponentsEnum.someothercomponent, entity_a.@"1");
-    // try std.testing.expect(try_got == null);
 
-    // const some: bool = true;
-    // ecs.components.insert(MyEcs.ComponentsEnum.somecomponent, entity_a.@"1", &some);
-    // const got_some = ecs.components.access(bool, MyEcs.ComponentsEnum.somecomponent, entity_a.@"1") orelse @panic("Nothing at that index");
-    // try std.testing.expectEqual(got_some.*, some);
-    // _ = ecs.components.remove(bool, MyEcs.ComponentsEnum.somecomponent, entity_a.@"1") orelse @panic("nothing at that index");
-    // const try_got_some = ecs.components.access(bool, MyEcs.ComponentsEnum.somecomponent, entity_a.@"1");
-    // try std.testing.expect(try_got_some == null);
-
-    // const entity_b = try ecs.entities.register(sig: {
-    //     var s = MyEcs.Signature.initEmpty();
-    //     s.toggle(@intFromEnum(MyEcs.ComponentsEnum.someothercomponent));
-    //     break :sig s;
-    // });
-    // const entity_c = try ecs.entities.register(sig: {
-    //     var s = MyEcs.Signature.initEmpty();
-    //     s.toggle(@intFromEnum(MyEcs.ComponentsEnum.othercomponent));
-    //     break :sig s;
-    // });
-
-    // try std.testing.expectEqual(0, ecs.entities.index_map.get(entity_a.@"0"));
-    // try std.testing.expectEqual(1, ecs.entities.index_map.get(entity_b.@"0"));
-
-    // try ecs.entities.remove(arena.allocator(), entity_a.@"0");
-    // const entity_d = try ecs.entities.register(MyEcs.Signature.initFull());
-
-    // try std.testing.expectEqual(0, ecs.entities.index_map.get(entity_c.@"0"));
-    // try std.testing.expect(ecs.entities.signatures[0].isSet(@intFromEnum(MyEcs.ComponentsEnum.othercomponent)));
-
-    // try std.testing.expectEqual(2, ecs.entities.index_map.get(entity_d.@"0"));
-    // try std.testing.expect(e: {
-    //     var correct = true;
-    //     const d_sig =
-    //         ecs.entities.signatures[2];
-    //     correct = d_sig.isSet(@intFromEnum(MyEcs.ComponentsEnum.somecomponent));
-    //     correct = d_sig.isSet(@intFromEnum(MyEcs.ComponentsEnum.othercomponent));
-    //     correct = d_sig.isSet(@intFromEnum(MyEcs.ComponentsEnum.someothercomponent));
-    //     break :e correct;
-    // });
+    var state = State{};
+    try ecs.runSystems(&state);
 
     std.debug.print("ENTITY MANAGEMENT WORKS AS EXPECTED\n", .{});
 }
 
-// test "ECS System Management" {
-//     std.testing.refAllDecls(@This());
-//     const allocator = std.testing.allocator;
-//     var arena = std.heap.ArenaAllocator.init(allocator);
-//     defer arena.deinit();
-
-//     std.debug.print("\n\n---\nINIT ECS TEST\n---\n", .{});
-
-//     const MyEcs = Ecs(5, 2, &[_]Component{
-//         .{ "somecomponent", u32 },
-//         .{ "othercomponent", bool },
-//         .{ "someothercomponent", u16 },
-//     });
-
-//     var ecs = MyEcs.init(arena.allocator());
-//     defer ecs.deinit(arena.allocator());
-
-//     const entity_a = try ecs.entities.register(sig: {
-//         var s = MyEcs.Signature.initEmpty();
-//         s.toggle(@intFromEnum(MyEcs.ComponentsEnum.somecomponent));
-//         break :sig s;
-//     });
-//     const entity_b = try ecs.entities.register(sig: {
-//         var s = MyEcs.Signature.initEmpty();
-//         s.toggle(@intFromEnum(MyEcs.ComponentsEnum.someothercomponent));
-//         break :sig s;
-//     });
-//     const entity_c = try ecs.entities.register(sig: {
-//         var s = MyEcs.Signature.initEmpty();
-//         s.toggle(@intFromEnum(MyEcs.ComponentsEnum.othercomponent));
-//         break :sig s;
-//     });
-//     const entity_d = try ecs.entities.register(MyEcs.Signature.initFull());
-//     _ = entity_a;
-//     _ = entity_b;
-//     _ = entity_c;
-//     _ = entity_d;
-
-//     try ecs.register_system(sig: {
-//         var s = MyEcs.Signature.initEmpty();
-//         s.toggle(@intFromEnum(MyEcs.ComponentsEnum.othercomponent));
-//         break :sig s;
-//     }, basic_system);
-// }
-
-const Component = struct { [:0]const u8, type };
+pub const Component = struct { [:0]const u8, type };
 
 pub fn ComponentsData(
     MaxNEntities: comptime_int,
@@ -195,6 +180,11 @@ pub fn ComponentsData(
                 break :arr arr;
             } };
         }
+
+        // Currently no way to cleanup component data
+        // pub fn deinit(self: *@This()) void {
+
+        // }
 
         /// expects to be passed `*const T` for `component`
         /// Unline `remove` and `access`, does not require passing the type
@@ -275,7 +265,7 @@ fn IdentifierManager(
             var current = head;
             for (0..MAX) |_| {
                 const id = rand.int(u32);
-                warn("Added ID: {} to queue\n", .{id});
+                // warn("Added ID: {} to queue\n", .{id});
                 const node = allocator.create(IdQueue.Node) catch |e| {
                     std.log.err("Error: {}", .{e});
                     return error.OutOfMemory;
@@ -361,17 +351,55 @@ fn IdentifierManager(
             return;
         }
 
-        pub fn get_matching_signature(self: Self, signature: Self.Signature) []Identifier {
-            var all: [MAX]Identifier = undefined;
-            for (0.., self.signatures, &all) |i, sig, *id| {
-                if (signature.eql(sig)) {
-                    id.* = self.identifier_map.get(i) orelse @panic("NO MATCHING IDENTIFIER FOR THAT INDEX");
+        /// Gets all entities who have at least all the bits that are set in the given signature set
+        pub fn getBySignatureAtLeast(self: Self, buffer: *[MAX]Identifier, signature: Self.Signature) ?[]Identifier {
+            var amt: usize = 0;
+            for (0.., self.signatures) |i, sig| {
+                if (signature.subsetOf(sig)) {
+                    const identifier = self.identifier_map.get(i) orelse @panic("NO MATCHING IDENTIFIER FOR THAT INDEX");
+                    std.log.warn("Entity at index {} has a matching signature\nID: {}\n", .{ i, identifier });
+                    buffer[amt] = identifier;
+                    amt += 1;
                 }
+                // std.log.warn("ALL: {any}\n", .{all});
             }
-            return &all;
+
+            if (amt < 1) {
+                return null;
+            }
+            const ret =
+                buffer[0..amt];
+
+            std.log.warn("RET: {any}\n", .{ret});
+            return ret;
         }
 
-        pub fn get_signature(self: Self, entity: Identifier) ?Self.Signature {
+        /// Gets all entities that match the given signature *exactly*
+        pub fn getBySignatureExact(self: Self, buffer: *[MAX]Identifier, signature: Self.Signature) ?[]Identifier {
+            // var all: [MAX]Identifier = undefined;
+            // @memset(&all, 0);
+            var amt: usize = 0;
+            for (0.., self.signatures) |i, sig| {
+                if (signature.eql(sig)) {
+                    const identifier = self.identifier_map.get(i) orelse @panic("NO MATCHING IDENTIFIER FOR THAT INDEX");
+                    std.log.warn("Entity at index {} has a matching signature\nID: {}\n", .{ i, identifier });
+                    buffer[amt] = identifier;
+                    amt += 1;
+                }
+                // std.log.warn("ALL: {any}\n", .{all});
+            }
+
+            if (amt < 1) {
+                return null;
+            }
+            const ret =
+                buffer[0..amt];
+
+            std.log.warn("RET: {any}\n", .{ret});
+            return ret;
+        }
+
+        pub fn getSignature(self: Self, entity: Identifier) ?Self.Signature {
             const idx = self.index_map.get(entity) orelse return null;
             return self.signatures[idx];
         }
@@ -379,12 +407,13 @@ fn IdentifierManager(
     };
 }
 
-const Entity = u32;
+pub const Entity = u32;
 // const System = struct { [:0]const u8, *const fn() };
 /// Entity Component System "Coordinator"
 pub fn Ecs(
     MaxNEntities: comptime_int,
     MaxNSystems: comptime_int,
+    comptime State: type,
     comptime Components: []const Component,
 ) type {
     if (MaxNEntities == 0 or MaxNSystems == 0) {
@@ -414,20 +443,30 @@ pub fn Ecs(
             }
 
             /// I dont think I like having this behavior like this
+            /// Not because it's BAD, but because it presents inconsitencies
             pub const EntityHandle = struct {
                 ecs: *ThisEcs,
                 identifier: Entity,
-                index: usize,
 
-                pub fn add_component(self: @This(), which: ComponentsEnum, component: anytype) void {
+                /// Is `null` if the entity has been removed
+                pub fn index(self: @This()) ?usize {
+                    return self.ecs.entities.manager.index_map.get(self.identifier);
+                }
+                pub fn add_component(self: *@This(), which: ComponentsEnum, component: anytype) void {
+                    const idx = self.index() orelse @panic("NO INDEX?");
                     // const signature = self.ecs.get_signature(&[_]ComponentsEnum{component});
-                    self.ecs.entities.manager.signatures[self.index].set(@intFromEnum(which));
-                    self.ecs.components.insert(which, self.index, component);
+                    var sig = self.ecs.entities.manager.signatures[idx];
+                    std.log.warn("sig: {b}\n", .{sig.mask});
+                    sig.set(@intFromEnum(which));
+                    std.log.warn("changed sig: {b}\n", .{sig.mask});
+                    self.ecs.entities.manager.signatures[idx] = sig;
+                    self.ecs.components.insert(which, idx, component);
                 }
             };
 
-            fn register(self: *@This()) !EntityHandle {
+            pub fn register(self: *@This()) !EntityHandle {
                 const id, const i = try self.manager.register();
+                _ = i;
                 var parent_ptr =
                     @as(*ThisEcs, @fieldParentPtr("entities", self));
                 _ = &parent_ptr;
@@ -435,12 +474,12 @@ pub fn Ecs(
                 return EntityHandle{
                     .ecs = parent_ptr,
                     .identifier = id,
-                    .index = i,
+                    // .index = i,
                 };
             }
         };
 
-        const SystemFn = *const fn ([]Entity, *ThisEcs) void;
+        const SystemFn = *const fn ([]Entity, *ThisEcs, *State) void;
 
         fn System(
             components: []const ComponentsEnum,
@@ -472,7 +511,7 @@ pub fn Ecs(
                 const system_id, const system_idx = try self.manager.register();
                 // _ = system;
                 // _ = system_idx;
-                std.log.debug("REGISTERED SYSTEM WITH ID: {} INTO ECS", .{system_id});
+                std.log.warn("REGISTERED SYSTEM WITH ID: {} INTO ECS", .{system_id});
                 self.manager.signatures[system_idx] = system.signature;
                 self.all_sys_fns[system_idx] = system.func;
             }
@@ -495,17 +534,20 @@ pub fn Ecs(
             self.systems.manager.deinit(allocator);
         }
 
-        pub fn run_systems(self: *ThisEcs) !void {
+        pub fn runSystems(self: *ThisEcs, state: *State) !void {
             var iter =
                 self.systems.manager.identifier_map.iterator();
             while (iter.next()) |e| {
                 const id = e.value_ptr;
                 const idx = e.key_ptr;
 
-                if (self.systems.manager.get_signature(id.*)) |sig| {
-                    const entities = self.entities.manager.get_matching_signature(sig);
-                    if (self.systems.all_sys_fns[idx.*]) |func| {
-                        func(entities, self);
+                if (self.systems.manager.getSignature(id.*)) |sig| {
+                    var all: [MaxNEntities]Entity = undefined;
+                    @memset(&all, 0);
+                    if (self.entities.manager.getBySignatureExact(&all, sig)) |entities| {
+                        if (self.systems.all_sys_fns[idx.*]) |func| {
+                            func(entities, self, state);
+                        }
                     }
                 }
 
@@ -522,12 +564,12 @@ pub fn Ecs(
         // pub fn get_components_by_signature(self: *ThisEcs, signature: ThisEcs.Signature) [] {
         // }
 
-        pub fn insert_component_into_entity(self: *ThisEcs, entity: Entity, which: ComponentsEnum, component: anytype) void {
-            const index: usize = self.entities.index_map.get(entity);
-            self.components.insert(which, index, component);
-            self.entities.signatures[index].set(@intFromEnum(which));
-            // self.components.arrays[@intFromEnum(which)][index] = c
-        }
+        // pub fn insertComponentIntoEntity(self: *ThisEcs, entity: Entity, which: ComponentsEnum, component: anytype) void {
+        //     const index: usize = self.entities.index_map.get(entity);
+        //     self.components.insert(which, index, component);
+        //     self.entities.signatures[index].set(@intFromEnum(which));
+        //     // self.components.arrays[@intFromEnum(which)][index] = c
+        // }
     };
 }
 
@@ -567,114 +609,6 @@ pub fn Ecs(
 //     try std.testing.expectEqual(0, manager.index_map.get(entity_c));
 //     try std.testing.expect(manager.signatures[0].isSet(1));
 // }
-
-pub const OldEntity = struct {
-    const MaterialTag = enum { color, material };
-    pub const Material = union(MaterialTag) { color: (rl.Color), material: (rl.Material) };
-    id: i32,
-    mesh: rl.Mesh,
-    material: Material,
-    body: zbt.Body,
-    /// Collision shape
-    shape: Shape,
-    /// 0.0 For static
-    mass: f32,
-    /// Column-major 4x4 matrix:
-    /// | m0   m4   m8   m12 |   <- X axis + translation X
-    /// | m1   m5   m9   m13 |   <- Y axis + translation Y
-    /// | m2   m6   m10  m14 |   <- Z axis + translation Z
-    /// | m3   m7   m11  m15 |   <- perspective row (typically 0 0 0 1)
-    transform: rl.Matrix,
-
-    const Self = @This();
-
-    pub fn init(
-        world: zbt.World,
-        mesh: rl.Mesh,
-        material: Material,
-        shape: Shape,
-        mass: f32,
-        transform: rl.Matrix,
-    ) Self {
-        const id = world.getNumBodies();
-        const body = zbt.initBody(
-            mass,
-            &[_]f32{
-                transform.m0,
-                transform.m4,
-                transform.m8,
-
-                transform.m1,
-                transform.m5,
-                transform.m9,
-
-                transform.m2,
-                transform.m6,
-                transform.m10,
-
-                transform.m12,
-                transform.m13,
-                transform.m14,
-            },
-            shape,
-        );
-
-        world.addBody(body);
-
-        return Self{
-            .id = id,
-            .body = body,
-            .mass = mass,
-            .material = material,
-            .shape = shape,
-            .mesh = mesh,
-            .transform = transform,
-        };
-    }
-
-    pub fn deinit(self: Self) void {
-        self.shape.deinit();
-        self.body.deinit();
-    }
-
-    pub fn update(self: *Self, world: zbt.World) void {
-        const body = world.getBody(self.id);
-        var transform: [12]f32 = undefined;
-        body.getGraphicsWorldTransform(&transform);
-
-        self.transform.m0 = transform[0];
-        self.transform.m4 = transform[1];
-        self.transform.m8 = transform[2];
-
-        self.transform.m1 = transform[3];
-        self.transform.m5 = transform[4];
-        self.transform.m9 = transform[5];
-
-        self.transform.m2 = transform[6];
-        self.transform.m6 = transform[7];
-        self.transform.m10 = transform[8];
-
-        self.transform.m12 = transform[9];
-        self.transform.m13 = transform[10];
-        self.transform.m14 = transform[11];
-    }
-
-    pub fn draw(self: *Self) anyerror!void {
-        // warn("DRAWING: {any}\n", .{self.transform});
-        const material: rl.Material =
-            mat: switch (self.material) {
-                .color => |c| {
-                    var material = try rl.loadMaterialDefault();
-                    material.maps[@as(usize, @intFromEnum(rl.MATERIAL_MAP_DIFFUSE))].color = c;
-                    break :mat material;
-                },
-                .material => |m| {
-                    break :mat m;
-                },
-            };
-        rl.drawMesh(self.mesh, material, self.transform);
-    }
-};
 
 // IMPLEMENT AS A SYSTEM
 // pub fn draw(state: *) anyerror!void {
