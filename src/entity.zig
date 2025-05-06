@@ -5,6 +5,7 @@ const core = @import("root.zig");
 const warn = std.log.warn;
 const Type = std.builtin.Type;
 const Shape = zbt.Shape;
+const Allocator = std.mem.Allocator;
 
 /// Used to manage any struct that can be identified with a `u32` and that has a signature
 /// (Entities & Systems)
@@ -36,7 +37,7 @@ fn IdentifierManager(
         },
 
         /// requires the same allocator be passed as with `init`
-        fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
+        fn deinit(self: *@This(), allocator: Allocator) void {
             defer self.index_map.deinit();
             defer self.identifier_map.deinit();
             var current = self.available_ids;
@@ -47,7 +48,7 @@ fn IdentifierManager(
             allocator.destroy(current);
         }
 
-        fn init(allocator: std.mem.Allocator) Error!Self {
+        fn init(allocator: Allocator) Error!Self {
             var prng = std.Random.DefaultPrng.init(blk: {
                 var seed: u64 = undefined;
                 std.posix.getrandom(std.mem.asBytes(&seed)) catch return error.Random;
@@ -121,7 +122,7 @@ fn IdentifierManager(
         }
 
         /// Allocates Queue node for the removed entity
-        fn remove(self: *Self, allocator: std.mem.Allocator, id: Identifier) Error!void {
+        fn remove(self: *Self, allocator: Allocator, id: Identifier) Error!void {
             const index = self.index_map.get(id) orelse return error.NoIndex;
 
             warn(
@@ -250,7 +251,7 @@ pub fn Ecs(
 
         const ComponentsManager = cmp_man: {
             const N = Components.len;
-            const ComponentTag, const TypeArr = blk: {
+            const ComponentTag: type, const TypeArr: [N]type = blk: {
                 var fields: [N]Type.EnumField = undefined;
                 var types: [N]type = undefined;
                 @memset(&fields, Type.EnumField{
@@ -276,10 +277,9 @@ pub fn Ecs(
 
             break :cmp_man struct {
                 const Enum = ComponentTag;
+                /// Each array corresponds with the components in the order they were passed
                 arrays: [N][MaxNEntities]?*anyopaque,
-
-                const Error = error{Type};
-
+                const Error = error{ InvalidType, OutOfMemory };
                 inline fn tagType(which: Enum) type {
                     return TypeArr[@intFromEnum(which)];
                 }
@@ -296,15 +296,33 @@ pub fn Ecs(
                     } };
                 }
 
-                /// expects to be passed `*T` for `component`
-                /// Unlike `remove` and `access`, does not require passing the type
-                pub fn insert(self: *@This(), which: Enum, idx: usize, component: anytype) void {
-                    const Ptr = @TypeOf(component);
-                    const info = @typeInfo(Ptr);
-                    if (info != .pointer or info.pointer.is_const) {
-                        @compileError("insert must be passed a mutable pointer");
+                /// **Must** be called with allocator used to insert values
+                pub fn deinit(
+                    self: @This(),
+                    allocator: Allocator,
+                ) void {
+                    inline for (self.arrays, 0..) |subarr, i| {
+                        for (subarr) |opt| {
+                            if (opt) |v| {
+                                const typed = @as(*TypeArr[i], @alignCast(@ptrCast(v)));
+                                allocator.destroy(typed);
+                            }
+                        }
                     }
-                    self.arrays[@intFromEnum(which)][idx] = @ptrCast(component);
+                }
+
+                /// expects to be passed `*T` for `component`
+                /// **NEVER** use multiple allocators for a single instance
+                pub fn insert(self: *@This(), allocator: Allocator, which: Enum, idx: usize, component: anytype) Error!void {
+                    inline for (TypeArr, 0..) |T, i| {
+                        if (i == @intFromEnum(which) and @TypeOf(component.*) == T) {
+                            const val_ptr = try allocator.create(T);
+                            val_ptr.* = component.*;
+                            self.arrays[@intFromEnum(which)][idx] = val_ptr;
+                            return;
+                        }
+                    }
+                    return error.InvalidType;
                 }
 
                 /// moves component at `idx` to `to_idx`
@@ -342,7 +360,7 @@ pub fn Ecs(
         const EntityManager = struct {
             manager: IdentifierManager(MaxNEntities, Components.len),
 
-            fn init(allocator: std.mem.Allocator) @This() {
+            fn init(allocator: Allocator) @This() {
                 return .{ .manager = IdentifierManager(MaxNEntities, Components.len).init(allocator) catch @panic("Could not create IdentifierManager for Entities") };
             }
 
@@ -424,7 +442,7 @@ pub fn Ecs(
                     self.ecs.components.removeWithReturn(@TypeOf(component), which, idx) orelse return error.ComponentRemovalFailure;
                 }
 
-                pub fn addComponent(self: *@This(), which: ComponentsEnum, component: anytype) void {
+                pub fn addComponent(self: *@This(), which: ComponentsEnum, component: anytype) !void {
                     const idx = self.index() orelse @panic("NO INDEX?");
                     // const signature = self.ecs.get_signature(&[_]ComponentsEnum{component});
                     var sig = self.ecs.entities.manager.signatures[idx];
@@ -432,7 +450,7 @@ pub fn Ecs(
                     sig.set(@intFromEnum(which));
                     std.log.debug("changed sig: {b}\n", .{sig.mask});
                     self.ecs.entities.manager.signatures[idx] = sig;
-                    self.ecs.components.insert(which, idx, component);
+                    try self.ecs.components.insert(self.ecs.allocator, which, idx, component);
                 }
             };
         };
@@ -463,7 +481,7 @@ pub fn Ecs(
                 break :a a;
             },
 
-            fn init(allocator: std.mem.Allocator) @This() {
+            fn init(allocator: Allocator) @This() {
                 return .{ .manager = IdentifierManager(MaxNSystems, Components.len).init(allocator) catch @panic("Failed to crate id manager for systems") };
             }
             fn register(self: *@This(), system: anytype) !void {
@@ -475,7 +493,7 @@ pub fn Ecs(
 
             /// The same kind of thing as `EntityHandle.destroy`
             /// removes the system and then move the function of the moved system to the old index of the removed system
-            fn remove(self: *@This(), allocator: std.mem.Allocator, system_id: MyManager.Identifier) !void {
+            fn remove(self: *@This(), allocator: Allocator, system_id: MyManager.Identifier) !void {
                 const idx = self.manager.index_map.get(system_id) orelse return error.NoSystem;
                 try self.manager.remove(allocator, system_id);
                 if (self.manager.lastRegistered()) |last| {
@@ -487,7 +505,7 @@ pub fn Ecs(
         };
 
         /// this is an allocator returned by `ArenaAllocator.allocator()`
-        allocator: std.mem.Allocator,
+        allocator: Allocator,
         entities: EntityManager,
         systems: SystemManager,
         components: ComponentsManager,
@@ -505,6 +523,7 @@ pub fn Ecs(
         pub fn deinit(self: *ThisEcs) void {
             self.entities.manager.deinit(self.allocator);
             self.systems.manager.deinit(self.allocator);
+            self.components.deinit(self.allocator);
         }
 
         pub fn runSystems(self: *ThisEcs, state: *State) !void {
@@ -554,18 +573,18 @@ test "ECS Entity Management" {
     const entity_a: MyEcs.EntityManager.EntityHandle = a: {
         var handle = try ecs.entities.register();
         var someother: u32 = 5;
-        handle.addComponent(MyEcs.ComponentsEnum.someothercomponent, &someother);
+        try handle.addComponent(MyEcs.ComponentsEnum.someothercomponent, &someother);
         var some: bool = false;
-        handle.addComponent(MyEcs.ComponentsEnum.somecomponent, &some);
+        try handle.addComponent(MyEcs.ComponentsEnum.somecomponent, &some);
         break :a handle;
     };
 
     const entity_b: MyEcs.EntityManager.EntityHandle = a: {
         var handle = try ecs.entities.register();
         var someother: u32 = 7;
-        handle.addComponent(MyEcs.ComponentsEnum.someothercomponent, &someother);
+        try handle.addComponent(MyEcs.ComponentsEnum.someothercomponent, &someother);
         var some: bool = true;
-        handle.addComponent(MyEcs.ComponentsEnum.somecomponent, &some);
+        try handle.addComponent(MyEcs.ComponentsEnum.somecomponent, &some);
         break :a handle;
     };
 
@@ -629,10 +648,9 @@ test "ECS Entity Management" {
 
         // adding component to `entity_c` to make sure the component data is moved as expected
         var val: u8 = 64;
-        entity_c.addComponent(.othercomponent, &val);
+        try entity_c.addComponent(.othercomponent, &val);
 
         try entity_a.destroy();
-        // try ecs.entities.manager.remove(arena.allocator(), entity_a.identifier);
         try std.testing.expectEqual(0, ecs.entities.manager.index_map.get(entity_c.identifier));
         try std.testing.expectEqual(0, entity_c.index().?);
 
@@ -646,12 +664,12 @@ test "ECS Entity Management" {
             _ = state;
             warn("IN SOME SYSTEM\n", .{});
             for (entities) |e| {
-                warn("MUTATING ENTITY: {}\n", .{e});
+                warn("MUTATING ENTITY: {}", .{e});
                 const idx = myecs.entities.manager.index_map.get(e) orelse @panic("ENTITY SHOULD HAVE AN INDEX?");
                 const v = myecs.components.access(u32, .someothercomponent, idx) orelse @panic("SHOULD HAVE THIS COMPONENT?");
                 warn("VAL: {}", .{v.*});
                 var new: u32 = 1111;
-                myecs.components.insert(.someothercomponent, idx, &new);
+                myecs.components.insert(myecs.allocator, .someothercomponent, idx, &new) catch @panic("FAILED TO INSERT COMPONENT");
                 // v.* = @as(u32, 1111);
             }
         }
