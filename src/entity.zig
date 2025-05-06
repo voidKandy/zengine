@@ -347,7 +347,7 @@ pub fn Ecs(
                 }
 
                 pub fn access(self: *@This(), T: type, which: Enum, idx: usize) ?*T {
-                    std.log.warn("ACCESSING ARRAY: {any}\n", .{self.arrays[@intFromEnum(which)]});
+                    // std.log.warn("ACCESSING ARRAY: {any}\n", .{self.arrays[@intFromEnum(which)]});
                     const ptr = self.arrays[@intFromEnum(which)][idx] orelse return null;
                     if (@intFromPtr(ptr) % @alignOf(T) != 0) {
                         @panic("Misaligned pointer access in ECS component store");
