@@ -24,7 +24,7 @@ const Ecs = core.entity.Ecs(MAX_N_ENTITIES, MAX_N_SYSTEMS, core.state.State, &[_
     .{ "material", rl.Material },
     .{ "transform", rl.Matrix },
     .{ "shape", zbt.Shape },
-    .{ "mass", f32 },
+    // .{ "mass", f32 },
     // Body can be gotten by querying the physics engine
     // Instead of storing the rigidbody, we store the index of the body in the physics engine
     // .{ "rigidbody", zbt.Body },
@@ -191,15 +191,11 @@ pub fn main() anyerror!void {
     // ---
     {
         var handle = try ecs.entities.register();
-        // _ = idx;
 
         const mesh =
             rl.genMeshCube(1.0, 1.0, 1.0);
         try handle.addComponent(Ecs.ComponentsEnum.mesh, &mesh);
 
-        const shape = boxshape.asShape();
-        // try handle.addComponent(Ecs.ComponentsEnum.shape, shape.as(zbt.ShapeType.box));
-        // ecs.entities.register(sig: Signature)
         var transform = rl.Matrix.identity();
         transform.m13 = 5.0;
         try handle.addComponent(Ecs.ComponentsEnum.transform, &transform);
@@ -210,10 +206,8 @@ pub fn main() anyerror!void {
 
         try handle.addComponent(Ecs.ComponentsEnum.material, &material);
 
-        const mass: f32 = 1.0;
-        try handle.addComponent(Ecs.ComponentsEnum.mass, &mass);
-
-        const body = transformMassShapeToBody(transform, mass, shape);
+        const shape = boxshape.asShape();
+        const body = transformMassShapeToBody(transform, 1.0, shape);
         const body_id = state.physics.world.getNumBodies();
         state.physics.world.addBody(body);
         try handle.addComponent(.body, &body_id);
@@ -221,20 +215,30 @@ pub fn main() anyerror!void {
 
     std.log.debug("FIRST ENTITY SIG: {b}\n", .{ecs.entities.manager.signatures[0].mask});
 
-    // var floor_ent = floor_ent: {
-    //     const mesh =
-    //         rl.genMeshPlane(10.0, 10.0, 1, 1);
-    //     const shape = zbt.initBoxShape(&[_]f32{ 10.0, 0.2, 10.0 });
-    //     const transform = rl.Matrix.identity();
-    //     const material: core.entity.OldEntity.Material = .{ .material = try rl.loadMaterialDefault() };
-    //     const mass = 0.0;
-    //     break :floor_ent core.entity.OldEntity.init(state.physics.world, mesh, material, shape.asShape(), mass, transform);
-    // };
+    // FLOOR ENTITY
+    // ---
+    const floor_shape = zbt.initBoxShape(&[_]f32{ 10.0, 0.2, 10.0 });
+    defer floor_shape.deinit();
+    {
+        var handle = try ecs.entities.register();
 
-    // for ([_]core.entity.OldEntity{ floor_ent, cube_ent }) |ent| {
-    //     try state.entities.push_resize(ent);
-    // }
-    // defer state.cleanup_physics_world_entities();
+        const mesh =
+            rl.genMeshPlane(10.0, 10.0, 1, 1);
+        try handle.addComponent(.mesh, &mesh);
+
+        const transform = rl.Matrix.identity();
+        try handle.addComponent(.transform, &transform);
+
+        var material = try rl.loadMaterialDefault();
+        material.maps[@as(usize, @intFromEnum(rl.MATERIAL_MAP_DIFFUSE))].color = rl.Color.dark_green;
+        try handle.addComponent(.material, &material);
+
+        const shape = floor_shape.asShape();
+        const body = transformMassShapeToBody(transform, 0.0, shape);
+        const body_id = state.physics.world.getNumBodies();
+        state.physics.world.addBody(body);
+        try handle.addComponent(.body, &body_id);
+    }
 
     std.log.warn("{} BODIES\n", .{physics_world.getNumBodies()});
     // Main game loop

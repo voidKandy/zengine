@@ -374,11 +374,9 @@ pub fn Ecs(
                 return EntityHandle{
                     .ecs = parent_ptr,
                     .identifier = id,
-                    // .index = i,
                 };
             }
-            /// I dont think I like having this behavior like this
-            /// Not because it's BAD, but because it presents inconsitencies
+            /// Helper struct for easily managing any components associated with an entity
             pub const EntityHandle = struct {
                 ecs: *ThisEcs,
                 identifier: Entity,
