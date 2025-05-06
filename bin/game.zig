@@ -56,33 +56,40 @@ fn transformMassShapeToBody(transform: rl.Matrix, mass: f32, shape: zbt.Shape) z
 }
 const SyncPhysicsSystem = Ecs.System(&[_]Ecs.ComponentsEnum{ .transform, .body }, struct {
     fn sync(entities: []core.entity.Entity, myecs: *Ecs, state: *core.state.State) void {
+        std.log.warn("IN SYNC SYSTEM\n", .{});
         for (entities) |e| {
             const idx = myecs.entities.manager.index_map.get(e).?;
             // const mesh = myecs.components.arrays[@intFromEnum(.mesh)].?[idx];
-            const stored_transform = myecs.components.arrays[@intFromEnum(.transform)].?[idx];
-            const body_id = myecs.components.arrays[@intFromEnum(.body)].?[idx];
+            const stored_transform = myecs.components.access(rl.Matrix, .transform, idx) orelse {
+                std.log.warn("Entity does not have transform component\n", .{});
+                continue;
+            };
+            const body_id = myecs.components.access(i32, .body, idx) orelse {
+                std.log.warn("Entity does not have body component\n", .{});
+                continue;
+            };
             // std.log.warn("DRAWING: {}\n", .{e});
 
-            const body = state.physics.world.getBody(body_id);
+            const body = state.physics.world.getBody(body_id.*);
 
             var transform: [12]f32 = undefined;
             body.getGraphicsWorldTransform(&transform);
 
-            stored_transform.m0 = transform[0];
-            stored_transform.m4 = transform[1];
-            stored_transform.m8 = transform[2];
+            stored_transform.*.m0 = transform[0];
+            stored_transform.*.m4 = transform[1];
+            stored_transform.*.m8 = transform[2];
 
-            stored_transform.m1 = transform[3];
-            stored_transform.m5 = transform[4];
-            stored_transform.m9 = transform[5];
+            stored_transform.*.m1 = transform[3];
+            stored_transform.*.m5 = transform[4];
+            stored_transform.*.m9 = transform[5];
 
-            stored_transform.m2 = transform[6];
-            stored_transform.m6 = transform[7];
-            stored_transform.m10 = transform[8];
+            stored_transform.*.m2 = transform[6];
+            stored_transform.*.m6 = transform[7];
+            stored_transform.*.m10 = transform[8];
 
-            stored_transform.m12 = transform[9];
-            stored_transform.m13 = transform[10];
-            stored_transform.m14 = transform[11];
+            stored_transform.*.m12 = transform[9];
+            stored_transform.*.m13 = transform[10];
+            stored_transform.*.m14 = transform[11];
         }
     }
 }.sync);
@@ -117,9 +124,11 @@ pub fn draw(myecs: *Ecs, state: *core.state.State) void {
 pub fn main() anyerror!void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
+    var arena = std.heap.ArenaAllocator.init(allocator);
     defer {
+        arena.deinit();
         const deinit_status = gpa.deinit();
-        if (deinit_status == .leak) std.testing.expect(false) catch @panic("TEST FAIL");
+        if (deinit_status == .leak) std.testing.expect(false) catch @panic("FAIL");
     }
     std.log.warn("INITIALIZED ALLOCATOR\n", .{});
 
@@ -130,8 +139,9 @@ pub fn main() anyerror!void {
     rl.setTargetFPS(60); // Set our game to run at 60 frames-per-second
 
     // ECS Setup
-    var ecs = Ecs.init(allocator);
-    defer ecs.deinit(allocator);
+    var ecs = Ecs.init(&arena);
+    defer ecs.deinit();
+    try ecs.systems.register(SyncPhysicsSystem{});
 
     // World Setup
     //---
@@ -141,9 +151,9 @@ pub fn main() anyerror!void {
     defer physics_world.deinit();
     const default_gravity: f32 = 10.0;
     physics_world.setGravity(&.{ 0.0, -default_gravity, 0.0 });
-    var physics_debug = try allocator.create(zbt.DebugDrawer);
-    defer allocator.destroy(physics_debug);
-    physics_debug.* = zbt.DebugDrawer.init(allocator);
+    var physics_debug = try arena.allocator().create(zbt.DebugDrawer);
+    // defer allocator.destroy(physics_debug);
+    physics_debug.* = zbt.DebugDrawer.init(arena.allocator());
 
     physics_world.debugSetDrawer(&physics_debug.getDebugDraw());
     physics_world.debugSetMode(zbt.DebugMode.user_only);
@@ -185,29 +195,28 @@ pub fn main() anyerror!void {
 
         const mesh =
             rl.genMeshCube(1.0, 1.0, 1.0);
-        handle.add_component(Ecs.ComponentsEnum.mesh, &mesh);
+        try handle.addComponent(Ecs.ComponentsEnum.mesh, &mesh);
 
         const shape = boxshape.asShape();
-        handle.add_component(Ecs.ComponentsEnum.shape, &shape);
+        // try handle.addComponent(Ecs.ComponentsEnum.shape, shape.as(zbt.ShapeType.box));
         // ecs.entities.register(sig: Signature)
         var transform = rl.Matrix.identity();
         transform.m13 = 5.0;
-        handle.add_component(Ecs.ComponentsEnum.transform, &transform);
+        try handle.addComponent(Ecs.ComponentsEnum.transform, &transform);
 
         var material = try rl.loadMaterialDefault();
         material.maps[@as(usize, @intFromEnum(rl.MATERIAL_MAP_DIFFUSE))].color = rl.Color.ray_white;
         // break :mat material;
 
-        handle.add_component(Ecs.ComponentsEnum.material, &material);
+        try handle.addComponent(Ecs.ComponentsEnum.material, &material);
 
-        const mass = 1.0;
-        handle.add_component(Ecs.ComponentsEnum.mass, &mass);
+        const mass: f32 = 1.0;
+        try handle.addComponent(Ecs.ComponentsEnum.mass, &mass);
 
-        // const body = transformMassShapeToBody(transform, mass, shape);
-        // body.deinit();
-        // const body_id = state.physics.world.getNumBodies();
-        // state.physics.world.addBody(body);
-        // handle.add_component(.body, &body_id);
+        const body = transformMassShapeToBody(transform, mass, shape);
+        const body_id = state.physics.world.getNumBodies();
+        state.physics.world.addBody(body);
+        try handle.addComponent(.body, &body_id);
     }
 
     std.log.debug("FIRST ENTITY SIG: {b}\n", .{ecs.entities.manager.signatures[0].mask});

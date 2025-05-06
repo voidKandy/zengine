@@ -171,7 +171,7 @@ fn IdentifierManager(
         }
 
         /// Gets all entities who have at least all the bits that are set in the given signature set
-        fn getBySignatureAtLeast(self: Self, buffer: *[MAX]Identifier, signature: Self.Signature) ?[]Identifier {
+        pub fn getBySignatureAtLeast(self: Self, buffer: *[MAX]Identifier, signature: Self.Signature) ?[]Identifier {
             var amt: usize = 0;
             for (0.., self.signatures) |i, sig| {
                 if (signature.subsetOf(sig)) {
@@ -364,7 +364,7 @@ pub fn Ecs(
                 return .{ .manager = IdentifierManager(MaxNEntities, Components.len).init(allocator) catch @panic("Could not create IdentifierManager for Entities") };
             }
 
-            fn register(self: *@This()) !EntityHandle {
+            pub fn register(self: *@This()) !EntityHandle {
                 const id, const i = try self.manager.register();
                 _ = i;
                 var parent_ptr =
@@ -484,7 +484,8 @@ pub fn Ecs(
             fn init(allocator: Allocator) @This() {
                 return .{ .manager = IdentifierManager(MaxNSystems, Components.len).init(allocator) catch @panic("Failed to crate id manager for systems") };
             }
-            fn register(self: *@This(), system: anytype) !void {
+
+            pub fn register(self: *@This(), system: anytype) !void {
                 const system_id, const system_idx = try self.manager.register();
                 std.log.warn("REGISTERED SYSTEM WITH ID: {} INTO ECS", .{system_id});
                 self.manager.signatures[system_idx] = system.signature;
