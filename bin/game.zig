@@ -19,7 +19,7 @@ fn init_camera() rl.Camera3D {
 
 const MAX_N_ENTITIES: usize = 1024;
 const MAX_N_SYSTEMS: usize = 1024;
-const Ecs = core.entity.Ecs(MAX_N_ENTITIES, MAX_N_SYSTEMS, core.state.State, &[_]core.entity.Component{
+const Ecs = core.ecs.Ecs(MAX_N_ENTITIES, MAX_N_SYSTEMS, core.state.State, &[_]core.ecs.Component{
     .{ "mesh", rl.Mesh },
     .{ "material", rl.Material },
     .{ "transform", rl.Matrix },
@@ -55,7 +55,7 @@ fn transformMassShapeToBody(transform: rl.Matrix, mass: f32, shape: zbt.Shape) z
     return body;
 }
 const SyncPhysicsSystem = Ecs.System(&[_]Ecs.ComponentsEnum{ .transform, .body }, struct {
-    fn sync(entities: []core.entity.Entity, myecs: *Ecs, state: *core.state.State) void {
+    fn sync(entities: []core.ecs.Entity, myecs: *Ecs, state: *core.state.State) void {
         std.log.warn("IN SYNC SYSTEM\n", .{});
         for (entities) |e| {
             const idx = myecs.entities.manager.index_map.get(e).?;
@@ -99,7 +99,7 @@ const SyncPhysicsSystem = Ecs.System(&[_]Ecs.ComponentsEnum{ .transform, .body }
 pub fn draw(myecs: *Ecs, state: *core.state.State) void {
     rl.beginMode3D(state.camera);
     defer rl.endMode3D();
-    var all: [MAX_N_ENTITIES]core.entity.Entity = undefined;
+    var all: [MAX_N_ENTITIES]core.ecs.Entity = undefined;
     @memset(&all, 0);
     const entities = myecs.entities.manager.getBySignatureAtLeast(&all, s: {
         var s = Ecs.Signature.initEmpty();
@@ -151,11 +151,8 @@ pub fn main() anyerror!void {
 
     defer {
         const num_bodies = @as(usize, @intCast(physics_world.getNumBodies()));
-        std.log.warn("BODIES: {}\n", .{num_bodies});
         for (0..num_bodies) |_| {
-            // std.log.warn("BODY: {}\n", .{i});
             const body = physics_world.getBody(0);
-            // body.deinit();
             physics_world.removeBody(body);
         }
         physics_world.deinit();

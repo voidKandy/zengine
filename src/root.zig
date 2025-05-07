@@ -1,6 +1,6 @@
 const std = @import("std");
 pub const da = @import("dynamic_array.zig");
-pub const entity = @import("entity.zig");
+pub const ecs = @import("ecs.zig");
 pub const state = @import("state.zig");
 
 test {
