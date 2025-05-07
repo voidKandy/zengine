@@ -146,14 +146,19 @@ pub fn main() anyerror!void {
     // World Setup
     //---
     zbt.init(arena.allocator());
-    // defer zbt.deinit();
+    defer zbt.deinit();
     var physics_world = zbt.initWorld();
+
     defer {
-        for (0..@as(usize, @intCast(physics_world.getNumBodies()))) |i| {
-            const body = physics_world.getBody(@as(i32, @intCast(i)));
+        const num_bodies = @as(usize, @intCast(physics_world.getNumBodies()));
+        std.log.warn("BODIES: {}\n", .{num_bodies});
+        for (0..num_bodies) |_| {
+            // std.log.warn("BODY: {}\n", .{i});
+            const body = physics_world.getBody(0);
+            // body.deinit();
             physics_world.removeBody(body);
-            body.deinit();
         }
+        physics_world.deinit();
     }
     // defer physics_world.deinit();
     const default_gravity: f32 = 10.0;
