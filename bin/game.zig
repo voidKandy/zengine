@@ -116,7 +116,7 @@ pub fn draw(myecs: *Ecs, state: *core.state.State) void {
         const mesh = myecs.components.access(rl.Mesh, Ecs.ComponentsEnum.mesh, idx).?;
         const transform = myecs.components.access(rl.Matrix, Ecs.ComponentsEnum.transform, idx).?;
         const material = myecs.components.access(rl.Material, Ecs.ComponentsEnum.material, idx).?;
-        std.log.warn("DRAWING: {}\n", .{e});
+        // std.log.warn("DRAWING: {}\n", .{e});
         rl.drawMesh(mesh.*, material.*, transform.*);
     }
 }
@@ -145,10 +145,17 @@ pub fn main() anyerror!void {
 
     // World Setup
     //---
-    zbt.init(allocator);
-    defer zbt.deinit();
+    zbt.init(arena.allocator());
+    // defer zbt.deinit();
     var physics_world = zbt.initWorld();
-    defer physics_world.deinit();
+    defer {
+        for (0..@as(usize, @intCast(physics_world.getNumBodies()))) |i| {
+            const body = physics_world.getBody(@as(i32, @intCast(i)));
+            physics_world.removeBody(body);
+            body.deinit();
+        }
+    }
+    // defer physics_world.deinit();
     const default_gravity: f32 = 10.0;
     physics_world.setGravity(&.{ 0.0, -default_gravity, 0.0 });
     var physics_debug = try arena.allocator().create(zbt.DebugDrawer);
@@ -160,12 +167,11 @@ pub fn main() anyerror!void {
 
     // Camera
     //---
-    const camera = init_camera();
     var state = core.state.State{
         .window_height = screenHeight,
         .window_width = screenWidth,
         // .entities = core.state.EntityArray.init(),
-        .camera = camera,
+        .camera = init_camera(),
         .pick = .{
             .p2p = zbt.allocPoint2PointConstraint(),
         },
@@ -176,13 +182,6 @@ pub fn main() anyerror!void {
     };
 
     defer state.pick.p2p.dealloc();
-    defer {
-        for (0..@as(usize, @intCast(state.physics.world.getNumBodies()))) |i| {
-            const body = state.physics.world.getBody(@as(i32, @intCast(i)));
-            defer body.deinit();
-            state.physics.world.removeBody(body);
-        }
-    }
 
     const boxshape = zbt.initBoxShape(&[_]f32{ 1.0, 1.0, 1.0 });
     defer boxshape.deinit();
@@ -192,8 +191,7 @@ pub fn main() anyerror!void {
     {
         var handle = try ecs.entities.register();
 
-        const mesh =
-            rl.genMeshCube(1.0, 1.0, 1.0);
+        const mesh = rl.genMeshCube(1.0, 1.0, 1.0);
         try handle.addComponent(Ecs.ComponentsEnum.mesh, &mesh);
 
         var transform = rl.Matrix.identity();
@@ -212,8 +210,6 @@ pub fn main() anyerror!void {
         state.physics.world.addBody(body);
         try handle.addComponent(.body, &body_id);
     }
-
-    std.log.debug("FIRST ENTITY SIG: {b}\n", .{ecs.entities.manager.signatures[0].mask});
 
     // FLOOR ENTITY
     // ---
@@ -240,7 +236,6 @@ pub fn main() anyerror!void {
         try handle.addComponent(.body, &body_id);
     }
 
-    std.log.warn("{} BODIES\n", .{physics_world.getNumBodies()});
     // Main game loop
     while (!rl.windowShouldClose()) {
         // Update
@@ -250,21 +245,12 @@ pub fn main() anyerror!void {
         try ecs.runSystems(&state);
         physics_world.debugDrawAll();
 
-        // cube_ent.update(physics_world);
-
         // Draw
         //----------------------------------------------------------------------------------
         rl.beginDrawing();
         defer rl.endDrawing();
         rl.clearBackground(rl.Color.black);
         draw(&ecs, &state);
-        // {
-        //     rl.beginMode3D(camera);
-        //     defer rl.endMode3D();
-
-        //     // try cube_ent.draw();
-        //     // try floor_ent.draw();
-        // }
 
         rl.drawFPS(10, 10);
     }
