@@ -171,6 +171,25 @@ fn IdentifierManager(
         }
 
         /// Gets all entities who have at least all the bits that are set in the given signature set
+        pub fn getBySignatureOption(self: Self, buffer: *[MAX]Identifier, signature: Self.Signature) ?[]Identifier {
+            var amt: usize = 0;
+            for (0.., self.signatures) |i, sig| {
+                if (signature.subsetOf(sig)) {
+                    const identifier = self.identifier_map.get(i) orelse @panic("NO MATCHING IDENTIFIER FOR THAT INDEX");
+                    // std.log.debug("Entity at index {} has a matching signature\nID: {}\n", .{ i, identifier });
+                    buffer[amt] = identifier;
+                    amt += 1;
+                }
+            }
+
+            if (amt < 1) {
+                return null;
+            }
+
+            return buffer[0..amt];
+        }
+
+        /// Gets all entities who have at least all the bits that are set in the given signature set
         pub fn getBySignatureAtLeast(self: Self, buffer: *[MAX]Identifier, signature: Self.Signature) ?[]Identifier {
             var amt: usize = 0;
             for (0.., self.signatures) |i, sig| {

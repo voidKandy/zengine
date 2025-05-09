@@ -17,9 +17,11 @@ fn init_camera() rl.Camera3D {
     return camera;
 }
 
+const Die = core.dice.Die("resources/numbers.png");
 const MAX_N_ENTITIES: usize = 1024;
 const MAX_N_SYSTEMS: usize = 1024;
 const Ecs = core.ecs.Ecs(MAX_N_ENTITIES, MAX_N_SYSTEMS, core.state.State, &[_]core.ecs.Component{
+    .{ "die", Die },
     .{ "mesh", rl.Mesh },
     .{ "material", rl.Material },
     .{ "transform", rl.Matrix },
@@ -30,36 +32,12 @@ const Ecs = core.ecs.Ecs(MAX_N_ENTITIES, MAX_N_SYSTEMS, core.state.State, &[_]co
     // .{ "rigidbody", zbt.Body },
     .{ "body", i32 },
 });
-fn transformMassShapeToBody(transform: rl.Matrix, mass: f32, shape: zbt.Shape) zbt.Body {
-    const body = zbt.initBody(
-        mass,
-        &[_]f32{
-            transform.m0,
-            transform.m4,
-            transform.m8,
 
-            transform.m1,
-            transform.m5,
-            transform.m9,
-
-            transform.m2,
-            transform.m6,
-            transform.m10,
-
-            transform.m12,
-            transform.m13,
-            transform.m14,
-        },
-        shape,
-    );
-    return body;
-}
 const SyncPhysicsSystem = Ecs.System(&[_]Ecs.ComponentsEnum{ .transform, .body }, struct {
     fn sync(entities: []core.ecs.Entity, myecs: *Ecs, state: *core.state.State) void {
         std.log.warn("IN SYNC SYSTEM\n", .{});
         for (entities) |e| {
             const idx = myecs.entities.manager.index_map.get(e).?;
-            // const mesh = myecs.components.arrays[@intFromEnum(.mesh)].?[idx];
             const stored_transform = myecs.components.access(rl.Matrix, .transform, idx) orelse {
                 std.log.warn("Entity does not have transform component\n", .{});
                 continue;
@@ -96,28 +74,51 @@ const SyncPhysicsSystem = Ecs.System(&[_]Ecs.ComponentsEnum{ .transform, .body }
 
 /// Not **everything** has to be done in systems
 /// I have opted to use procedures for drawing logic
+/// This is because I would have to add complexity to systems to allow some run during drawing
+/// instead, I have opted to keep systems in the update loop
 pub fn draw(myecs: *Ecs, state: *core.state.State) void {
     rl.beginMode3D(state.camera);
     defer rl.endMode3D();
     var all: [MAX_N_ENTITIES]core.ecs.Entity = undefined;
     @memset(&all, 0);
-    const entities = myecs.entities.manager.getBySignatureAtLeast(&all, s: {
+    const phys_mesh_sig = s: {
         var s = Ecs.Signature.initEmpty();
         s.set(@intFromEnum(Ecs.ComponentsEnum.mesh));
         s.set(@intFromEnum(Ecs.ComponentsEnum.transform));
         s.set(@intFromEnum(Ecs.ComponentsEnum.material));
         break :s s;
-    }) orelse {
-        std.log.warn("DRAW GOT NO ENTITIES\n", .{});
-        return;
     };
-    for (entities) |e| {
-        const idx = myecs.entities.manager.index_map.get(e) orelse std.debug.panic("Entity: {} Has no index?\n", .{e});
-        const mesh = myecs.components.access(rl.Mesh, Ecs.ComponentsEnum.mesh, idx).?;
-        const transform = myecs.components.access(rl.Matrix, Ecs.ComponentsEnum.transform, idx).?;
-        const material = myecs.components.access(rl.Material, Ecs.ComponentsEnum.material, idx).?;
-        // std.log.warn("DRAWING: {}\n", .{e});
-        rl.drawMesh(mesh.*, material.*, transform.*);
+    const die_sig = s: {
+        var s = Ecs.Signature.initEmpty();
+        s.set(@intFromEnum(Ecs.ComponentsEnum.die));
+        s.set(@intFromEnum(Ecs.ComponentsEnum.transform));
+        break :s s;
+    };
+
+    std.log.warn(
+        \\ PhysMesh Sig: {b}
+        \\ die Sig: {b}
+    , .{ phys_mesh_sig.mask, die_sig.mask });
+
+    for (0.., myecs.entities.manager.signatures) |i, sig| {
+        std.log.warn("SIG: {b}\n", .{sig.mask});
+
+        if (sig.supersetOf(phys_mesh_sig) or sig.supersetOf(die_sig)) {
+            std.log.warn("IDX: {}\n", .{i});
+            const identifier = myecs.entities.manager.identifier_map.get(i) orelse break;
+            std.log.warn("DRAWING: {}\n", .{identifier});
+            const idx = myecs.entities.manager.index_map.get(identifier) orelse std.debug.panic("Entity: {} Has no index?\n", .{identifier});
+            const transform = myecs.components.access(rl.Matrix, Ecs.ComponentsEnum.transform, idx).?;
+            if (myecs.components.access(Die, .die, idx)) |die| {
+                std.log.warn("drawing die\n", .{});
+                try die.draw(transform.*);
+                continue;
+            }
+
+            const mesh = myecs.components.access(rl.Mesh, Ecs.ComponentsEnum.mesh, idx).?;
+            const material = myecs.components.access(rl.Material, Ecs.ComponentsEnum.material, idx).?;
+            rl.drawMesh(mesh.*, material.*, transform.*);
+        }
     }
 }
 
@@ -193,21 +194,22 @@ pub fn main() anyerror!void {
     {
         var handle = try ecs.entities.register();
 
-        const mesh = rl.genMeshCube(1.0, 1.0, 1.0);
-        try handle.addComponent(Ecs.ComponentsEnum.mesh, &mesh);
+        var material = try rl.loadMaterialDefault();
+        const shader = try rl.loadShader("resources/shaders/basic.vs", "resources/shaders/basic.fs");
+        if (shader.id == 0) {
+            @panic("SHADER FAILED TO LOAD");
+        }
+        material.shader = shader;
+        const die = try Die.new(material, .six, .{ 1.0, 1.0, 1.0 });
+        try handle.addComponent(Ecs.ComponentsEnum.die, &die);
 
         var transform = rl.Matrix.identity();
-        transform.m13 = 5.0;
+        transform = transform.multiply(rl.Matrix.translate(0.0, 10.0, 0.0));
+        // We use the transform with the `Die` to store *where* it is
         try handle.addComponent(Ecs.ComponentsEnum.transform, &transform);
 
-        var material = try rl.loadMaterialDefault();
-        material.maps[@as(usize, @intFromEnum(rl.MATERIAL_MAP_DIFFUSE))].color = rl.Color.ray_white;
-        // break :mat material;
-
-        try handle.addComponent(Ecs.ComponentsEnum.material, &material);
-
         const shape = boxshape.asShape();
-        const body = transformMassShapeToBody(transform, 1.0, shape);
+        const body = core.util.transformMassShapeToBody(transform, 1.0, shape);
         const body_id = state.physics.world.getNumBodies();
         state.physics.world.addBody(body);
         try handle.addComponent(.body, &body_id);
@@ -232,7 +234,7 @@ pub fn main() anyerror!void {
         try handle.addComponent(.material, &material);
 
         const shape = floor_shape.asShape();
-        const body = transformMassShapeToBody(transform, 0.0, shape);
+        const body = core.util.transformMassShapeToBody(transform, 0.0, shape);
         const body_id = state.physics.world.getNumBodies();
         state.physics.world.addBody(body);
         try handle.addComponent(.body, &body_id);

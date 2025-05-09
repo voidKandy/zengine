@@ -3,6 +3,7 @@ pub const da = @import("dynamic_array.zig");
 pub const ecs = @import("ecs.zig");
 pub const state = @import("state.zig");
 pub const dice = @import("dice.zig");
+pub const util = @import("util.zig");
 
 test {
     std.testing.refAllDecls(@This());

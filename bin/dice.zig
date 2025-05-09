@@ -17,7 +17,7 @@ fn init_camera() rl.Camera3D {
     return camera;
 }
 
-const Die = core.dice.Die(core.dice.DieType.six, "resources/numbers.png");
+const Die = core.dice.Die("resources/numbers.png");
 
 pub fn main() !void {
     const screen_width = 800;
@@ -34,21 +34,19 @@ pub fn main() !void {
     }
     material.shader = shader;
 
-    var d6 = try Die.new(material, .{ 1.0, 1.0, 1.0 });
+    var d6_world_transform = rl.Matrix.identity();
+    d6_world_transform.m14 -= 0.5;
+    var d6 = try Die.new(material, .six, .{ 1.0, 1.0, 1.0 });
     while (!rl.windowShouldClose()) // Detect window close button or ESC key
     {
-        var rotation = rl.Vector3.zero();
-        const dt = rl.getFrameTime(); // Get delta time between frames
+        const dt = rl.getFrameTime();
 
-        const rotation_speed = 2.0 * dt;
-        rotation.x += rotation_speed;
-        rotation.y += rotation_speed; // Slow down one axis to give a sense of 3D rotation
-        rotation.z += rotation_speed * 0.25; // Slow down another axis for a more natural spin
-
-        d6.model.transform = rl.Matrix.multiply(d6.model.transform, rl.Matrix.rotateXYZ(rotation));
-        for (&d6.quads) |*q| {
-            q.transform = rl.Matrix.multiply(q.transform, rl.Matrix.rotateXYZ(rotation));
-        }
+        const rotation = rl.Matrix.rotateXYZ(rl.Vector3{
+            .x = 2.0 * dt,
+            .y = 2.0 * dt,
+            .z = 0.5 * dt,
+        });
+        d6_world_transform = rl.Matrix.multiply(rotation, d6_world_transform);
 
         rl.beginDrawing();
         rl.clearBackground(rl.Color.black);
@@ -59,14 +57,13 @@ pub fn main() !void {
             // rl.gl.rlEnableDepthTest();
             defer rl.endMode3D();
 
-            const position = rl.Vector3.init(0.0, 0.0, -1.0);
             const mvp_loc = rl.getShaderLocation(shader, "mvp");
             var model_matrix = rl.Matrix.identity();
-            model_matrix = rl.Matrix.multiply(model_matrix, rl.Matrix.translate(position.x, position.y, position.z));
+            model_matrix = rl.Matrix.multiply(model_matrix, d6_world_transform);
             const mvp = rl.Matrix.multiply(rl.getCameraMatrix(camera), model_matrix);
             rl.setShaderValueMatrix(shader, mvp_loc, mvp);
             rl.gl.rlEnableBackfaceCulling();
-            try d6.draw(position);
+            try d6.draw(d6_world_transform);
             // rl.drawModel(d6.model, position, 1.0, rl.Color.white);
 
             // for (&d6.quads) |*quad| {

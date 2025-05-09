@@ -31,157 +31,230 @@ pub const DieType =
         }
     };
 
+// Draw cube textured
+// NOTE: Cube position is the center position
+fn drawCubeTexture(texture: rl.Texture2D, position: rl.Vector3, width: f32, height: f32, length: f32, color: rl.Color) void {
+    const x = position.x;
+    const y = position.y;
+    const z = position.z;
+
+    // Set desired texture to be enabled while drawing following vertex data
+    gl.rlSetTexture(texture.id);
+
+    // Vertex data transformation can be defined with the commented lines,
+    // but in this example we calculate the transformed vertex data directly when calling gl.rlVertex3f()
+    //gl.rlPushMatrix();
+    // NOTE: Transformation is applied in inverse order (scale -> rotate -> translate)
+    //gl.rlTranslatef(2.0, 0.0, 0.0);
+    //gl.rlRotatef(45, 0, 1, 0);
+    //gl.rlScalef(2.0, 2.0, 2.0);
+
+    gl.rlBegin(gl.rl_quads);
+    gl.rlColor4ub(color.r, color.g, color.b, color.a);
+    // Front Face
+    gl.rlNormal3f(0.0, 0.0, 1.0); // Normal Pointing Towards Viewer
+    gl.rlTexCoord2f(0.0, 0.0);
+    gl.rlVertex3f(x - width / 2, y - height / 2, z + length / 2); // Bottom Left Of The Texture and Quad
+    gl.rlTexCoord2f(1.0, 0.0);
+    gl.rlVertex3f(x + width / 2, y - height / 2, z + length / 2); // Bottom Right Of The Texture and Quad
+    gl.rlTexCoord2f(1.0, 1.0);
+    gl.rlVertex3f(x + width / 2, y + height / 2, z + length / 2); // Top Right Of The Texture and Quad
+    gl.rlTexCoord2f(0.0, 1.0);
+    gl.rlVertex3f(x - width / 2, y + height / 2, z + length / 2); // Top Left Of The Texture and Quad
+    // Back Face
+    gl.rlNormal3f(0.0, 0.0, -1.0); // Normal Pointing Away From Viewer
+    gl.rlTexCoord2f(1.0, 0.0);
+    gl.rlVertex3f(x - width / 2, y - height / 2, z - length / 2); // Bottom Right Of The Texture and Quad
+    gl.rlTexCoord2f(1.0, 1.0);
+    gl.rlVertex3f(x - width / 2, y + height / 2, z - length / 2); // Top Right Of The Texture and Quad
+    gl.rlTexCoord2f(0.0, 1.0);
+    gl.rlVertex3f(x + width / 2, y + height / 2, z - length / 2); // Top Left Of The Texture and Quad
+    gl.rlTexCoord2f(0.0, 0.0);
+    gl.rlVertex3f(x + width / 2, y - height / 2, z - length / 2); // Bottom Left Of The Texture and Quad
+    // Top Face
+    gl.rlNormal3f(0.0, 1.0, 0.0); // Normal Pointing Up
+    gl.rlTexCoord2f(0.0, 1.0);
+    gl.rlVertex3f(x - width / 2, y + height / 2, z - length / 2); // Top Left Of The Texture and Quad
+    gl.rlTexCoord2f(0.0, 0.0);
+    gl.rlVertex3f(x - width / 2, y + height / 2, z + length / 2); // Bottom Left Of The Texture and Quad
+    gl.rlTexCoord2f(1.0, 0.0);
+    gl.rlVertex3f(x + width / 2, y + height / 2, z + length / 2); // Bottom Right Of The Texture and Quad
+    gl.rlTexCoord2f(1.0, 1.0);
+    gl.rlVertex3f(x + width / 2, y + height / 2, z - length / 2); // Top Right Of The Texture and Quad
+    // Bottom Face
+    gl.rlNormal3f(0.0, -1.0, 0.0); // Normal Pointing Down
+    gl.rlTexCoord2f(1.0, 1.0);
+    gl.rlVertex3f(x - width / 2, y - height / 2, z - length / 2); // Top Right Of The Texture and Quad
+    gl.rlTexCoord2f(0.0, 1.0);
+    gl.rlVertex3f(x + width / 2, y - height / 2, z - length / 2); // Top Left Of The Texture and Quad
+    gl.rlTexCoord2f(0.0, 0.0);
+    gl.rlVertex3f(x + width / 2, y - height / 2, z + length / 2); // Bottom Left Of The Texture and Quad
+    gl.rlTexCoord2f(1.0, 0.0);
+    gl.rlVertex3f(x - width / 2, y - height / 2, z + length / 2); // Bottom Right Of The Texture and Quad
+    // Right face
+    gl.rlNormal3f(1.0, 0.0, 0.0); // Normal Pointing Right
+    gl.rlTexCoord2f(1.0, 0.0);
+    gl.rlVertex3f(x + width / 2, y - height / 2, z - length / 2); // Bottom Right Of The Texture and Quad
+    gl.rlTexCoord2f(1.0, 1.0);
+    gl.rlVertex3f(x + width / 2, y + height / 2, z - length / 2); // Top Right Of The Texture and Quad
+    gl.rlTexCoord2f(0.0, 1.0);
+    gl.rlVertex3f(x + width / 2, y + height / 2, z + length / 2); // Top Left Of The Texture and Quad
+    gl.rlTexCoord2f(0.0, 0.0);
+    gl.rlVertex3f(x + width / 2, y - height / 2, z + length / 2); // Bottom Left Of The Texture and Quad
+    // Left Face
+    gl.rlNormal3f(-1.0, 0.0, 0.0); // Normal Pointing Left
+    gl.rlTexCoord2f(0.0, 0.0);
+    gl.rlVertex3f(x - width / 2, y - height / 2, z - length / 2); // Bottom Left Of The Texture and Quad
+    gl.rlTexCoord2f(1.0, 0.0);
+    gl.rlVertex3f(x - width / 2, y - height / 2, z + length / 2); // Bottom Right Of The Texture and Quad
+    gl.rlTexCoord2f(1.0, 1.0);
+    gl.rlVertex3f(x - width / 2, y + height / 2, z + length / 2); // Top Right Of The Texture and Quad
+    gl.rlTexCoord2f(0.0, 1.0);
+    gl.rlVertex3f(x - width / 2, y + height / 2, z - length / 2); // Top Left Of The Texture and Quad
+    gl.rlEnd();
+    //gl.rlPopMatrix();
+
+    gl.rlSetTexture(0);
+}
+
+// Draw cube with texture piece applied to all faces
+fn drawCubeTextureRec(texture: rl.Texture2D, source: rl.Rectangle, position: rl.Vector3, width: f32, height: f32, length: f32, color: rl.Color) void {
+    const x = position.x;
+    const y = position.y;
+    const z = position.z;
+    const texWidth: f32 = @intCast(texture.width);
+    const texHeight: f32 = @intCast(texture.height);
+
+    // Set desired texture to be enabled while drawing following vertex data
+    gl.rlSetTexture(texture.id);
+
+    // We calculate the normalized texture coordinates for the desired texture-source-rectangle
+    // It means converting from (tex.width, tex.height) coordinates to [0.0, 1.0] equivalent
+    gl.rlBegin(gl.rl_quads);
+    gl.rlColor4ub(color.r, color.g, color.b, color.a);
+
+    // Front face
+    gl.rlNormal3f(0.0, 0.0, 1.0);
+    gl.rlTexCoord2f(source.x / texWidth, (source.y + source.height) / texHeight);
+    gl.rlVertex3f(x - width / 2, y - height / 2, z + length / 2);
+    gl.rlTexCoord2f((source.x + source.width) / texWidth, (source.y + source.height) / texHeight);
+    gl.rlVertex3f(x + width / 2, y - height / 2, z + length / 2);
+    gl.rlTexCoord2f((source.x + source.width) / texWidth, source.y / texHeight);
+    gl.rlVertex3f(x + width / 2, y + height / 2, z + length / 2);
+    gl.rlTexCoord2f(source.x / texWidth, source.y / texHeight);
+    gl.rlVertex3f(x - width / 2, y + height / 2, z + length / 2);
+
+    // Back face
+    gl.rlNormal3f(0.0, 0.0, -1.0);
+    gl.rlTexCoord2f((source.x + source.width) / texWidth, (source.y + source.height) / texHeight);
+    gl.rlVertex3f(x - width / 2, y - height / 2, z - length / 2);
+    gl.rlTexCoord2f((source.x + source.width) / texWidth, source.y / texHeight);
+    gl.rlVertex3f(x - width / 2, y + height / 2, z - length / 2);
+    gl.rlTexCoord2f(source.x / texWidth, source.y / texHeight);
+    gl.rlVertex3f(x + width / 2, y + height / 2, z - length / 2);
+    gl.rlTexCoord2f(source.x / texWidth, (source.y + source.height) / texHeight);
+    gl.rlVertex3f(x + width / 2, y - height / 2, z - length / 2);
+
+    // Top face
+    gl.rlNormal3f(0.0, 1.0, 0.0);
+    gl.rlTexCoord2f(source.x / texWidth, source.y / texHeight);
+    gl.rlVertex3f(x - width / 2, y + height / 2, z - length / 2);
+    gl.rlTexCoord2f(source.x / texWidth, (source.y + source.height) / texHeight);
+    gl.rlVertex3f(x - width / 2, y + height / 2, z + length / 2);
+    gl.rlTexCoord2f((source.x + source.width) / texWidth, (source.y + source.height) / texHeight);
+    gl.rlVertex3f(x + width / 2, y + height / 2, z + length / 2);
+    gl.rlTexCoord2f((source.x + source.width) / texWidth, source.y / texHeight);
+    gl.rlVertex3f(x + width / 2, y + height / 2, z - length / 2);
+
+    // Bottom face
+    gl.rlNormal3f(0.0, -1.0, 0.0);
+    gl.rlTexCoord2f((source.x + source.width) / texWidth, source.y / texHeight);
+    gl.rlVertex3f(x - width / 2, y - height / 2, z - length / 2);
+    gl.rlTexCoord2f(source.x / texWidth, source.y / texHeight);
+    gl.rlVertex3f(x + width / 2, y - height / 2, z - length / 2);
+    gl.rlTexCoord2f(source.x / texWidth, (source.y + source.height) / texHeight);
+    gl.rlVertex3f(x + width / 2, y - height / 2, z + length / 2);
+    gl.rlTexCoord2f((source.x + source.width) / texWidth, (source.y + source.height) / texHeight);
+    gl.rlVertex3f(x - width / 2, y - height / 2, z + length / 2);
+
+    // Right face
+    gl.rlNormal3f(1.0, 0.0, 0.0);
+    gl.rlTexCoord2f((source.x + source.width) / texWidth, (source.y + source.height) / texHeight);
+    gl.rlVertex3f(x + width / 2, y - height / 2, z - length / 2);
+    gl.rlTexCoord2f((source.x + source.width) / texWidth, source.y / texHeight);
+    gl.rlVertex3f(x + width / 2, y + height / 2, z - length / 2);
+    gl.rlTexCoord2f(source.x / texWidth, source.y / texHeight);
+    gl.rlVertex3f(x + width / 2, y + height / 2, z + length / 2);
+    gl.rlTexCoord2f(source.x / texWidth, (source.y + source.height) / texHeight);
+    gl.rlVertex3f(x + width / 2, y - height / 2, z + length / 2);
+
+    // Left face
+    gl.rlNormal3f(-1.0, 0.0, 0.0);
+    gl.rlTexCoord2f(source.x / texWidth, (source.y + source.height) / texHeight);
+    gl.rlVertex3f(x - width / 2, y - height / 2, z - length / 2);
+    gl.rlTexCoord2f((source.x + source.width) / texWidth, (source.y + source.height) / texHeight);
+    gl.rlVertex3f(x - width / 2, y - height / 2, z + length / 2);
+    gl.rlTexCoord2f((source.x + source.width) / texWidth, source.y / texHeight);
+    gl.rlVertex3f(x - width / 2, y + height / 2, z + length / 2);
+    gl.rlTexCoord2f(source.x / texWidth, source.y / texHeight);
+    gl.rlVertex3f(x - width / 2, y + height / 2, z - length / 2);
+
+    gl.rlEnd();
+
+    gl.rlSetTexture(0);
+}
 /// Each die has two "layers"
 /// The first is a mesh that is simply the die shape with a certain material
 /// The other is a quad for each face that has a number texture on it
-pub fn Die(comptime _type: DieType, comptime numbers_atlas: []const u8) type {
+pub fn Die(comptime numbers_atlas_path: [:0]const u8) type {
     // std.fs.accessAbsolute(numbers_atlas, .{}) catch {
     //     @compileError("Must pass a valid filepath for numbers_atlas");
     // };
 
-    const NUM_QUADS = switch (_type) {
-        .six => 6,
-    };
-
     return struct {
         _type: DieType,
         model: rl.Model,
-        quads: [NUM_QUADS]OverlayQuad,
+        quad_texture: rl.Texture2D,
+        // faces: rl.Model,
+        // quads: [NUM_QUADS]OverlayQuad,
 
         fn zeroTermAtlasPath() [:0]const u8 {
-            var arr: [numbers_atlas.len + 1:0]u8 = undefined;
+            var arr: [numbers_atlas_path.len + 1:0]u8 = undefined;
             @memset(&arr, 0);
             for (&arr, 0..) |*v, i| {
-                if (i < numbers_atlas.len) {
-                    const byte = numbers_atlas[i];
+                if (i < numbers_atlas_path.len) {
+                    const byte = numbers_atlas_path[i];
                     v.* = byte;
                 }
             }
             return &arr;
         }
 
-        pub fn new(material: rl.Material, args: anytype) rl.RaylibError!@This() {
+        /// Each `DieType` has their own initialization function arguments which are passed here as `args`
+        /// `.six` - `struct {f32, f32, f32}`
+        pub fn new(material: rl.Material, _type: DieType, args: anytype) rl.RaylibError!@This() {
+            const numbers_atlas_img = rl.loadImage(numbers_atlas_path) catch @panic("INVALID ATLAS PATH");
+            const quad_tex = rl.loadTextureFromImage(numbers_atlas_img) catch @panic("COULD NOT GET TEXTURE FROM ATLAS IMAGE");
             const mesh = try _type.createMeshFunc()(args);
             var model = try rl.loadModelFromMesh(mesh);
             model.materials[0] = material;
 
-            const numbers_atlas_img = try rl.loadImage(zeroTermAtlasPath());
-
-            var quads: [NUM_QUADS]OverlayQuad = undefined;
-            // CURRENTLY ONLY WORKS FOR A D6
-            // Compute UVs for index `i` (0–5)
-            const cols = 2;
-            // const rows = 3;
-
-            const deg2rad = std.math.pi / 180.0;
-            const rotations_and_positions = [_]struct { rl.Matrix, rl.Vector3 }{
-                // TOP
-                .{
-                    rl.Matrix.identity(),
-                    rl.Vector3.init(0.0, 0.5, -0.5),
-                },
-                // BOTTOM
-                .{
-                    rl.Matrix.rotateX(180.0 * deg2rad),
-                    rl.Vector3.init(0.0, -0.5, -0.5),
-                },
-                // RIGHT
-                .{
-                    rl.Matrix.rotateXYZ(rl.Vector3.init(90.0 * deg2rad, 0.0, -90.0 * deg2rad)),
-                    rl.Vector3.init(0.5, 0.0, -0.5),
-                },
-                // LEFT
-                .{
-                    rl.Matrix.rotateXYZ(rl.Vector3.init(90.0 * deg2rad, 0.0, 90.0 * deg2rad)),
-                    rl.Vector3.init(-0.5, 0.0, -0.5),
-                },
-                // FRONT
-                .{
-                    rl.Matrix.rotateX(90.0 * deg2rad),
-                    rl.Vector3.init(0.0, 0.0, -0.5),
-                },
-                // BACK
-                .{
-                    rl.Matrix.rotateX(180.0 * deg2rad),
-                    rl.Vector3.init(0.0, 0.0, -0.5),
-                },
-            };
-
-            for (&quads, 0..) |*q, i| {
-                const rotation, const position = rotations_and_positions[i];
-                const col = i % cols;
-                const row = i / cols;
-
-                // const u_min = @as(f32, @floatFromInt(col)) / @as(f32, @floatFromInt(cols));
-                // const v_min = @as(f32, @floatFromInt(row)) / @as(f32, @floatFromInt(rows));
-                // const u_max = (@as(f32, @floatFromInt(col + 1))) / @as(f32, @floatFromInt(cols));
-                // const v_max = (@as(f32, @floatFromInt(row + 1))) / @as(f32, @floatFromInt(rows));
-
-                const rect = rl.Rectangle{
-                    .x = @as(f32, @floatFromInt(col)) * 256.0,
-                    .y = @as(f32, @floatFromInt(row)) * 256.0,
-                    .width = 256.0,
-                    .height = 256.0,
-                };
-                // const rect =
-                //     rl.Rectangle{ .x = u_min, .y = v_min, .width = 256.0, .height = 256.0 };
-                warn(
-                    \\ CROPPING IMAGE WITH RECTANGLE: {any}
-                , .{rect});
-                const quad_img = numbers_atlas_img.copyRec(rect);
-                const quad_tex = try rl.loadTextureFromImage(quad_img);
-                var quad_material = try rl.loadMaterialDefault();
-                quad_material.maps[@intFromEnum(rl.MATERIAL_MAP_DIFFUSE)].texture = quad_tex;
-                quad_material.maps[@intFromEnum(rl.MATERIAL_MAP_DIFFUSE)].color = switch (i) {
-                    0 => rl.Color.blue,
-                    1 => rl.Color.orange,
-                    2 => rl.Color.red,
-                    3 => rl.Color.green,
-                    4 => rl.Color.pink,
-                    5 => rl.Color.yellow,
-                    else => rl.Color.white,
-                };
-
-                // Create a quad mesh
-                const plane = rl.genMeshPlane(1.0, 1.0, 256, 256); // Normalized size
-
-                const transform = trans: {
-                    var t =
-                        rl.Matrix.identity();
-                    t = t.multiply(rotation);
-                    t = t.multiply(rl.Matrix.translate(position.x, position.y, position.z));
-                    break :trans t;
-                };
-                // _ = position;
-
-                q.* = OverlayQuad{
-                    .mesh = plane,
-                    .material = quad_material,
-                    .transform = transform,
-                };
-            }
-
             return @This(){
                 ._type = _type,
                 .model = model,
-                .quads = quads,
-                // .mesh = mesh,
-                // .material = material,
+                .quad_texture = quad_tex,
+                // .faces = _type.getQuadsMesh(zeroTermAtlasPath()),
             };
         }
 
-        pub fn draw(self: *@This(), position: rl.Vector3) !void {
-            // _ = position;
-            rl.drawModel(self.model, position, 1.0, rl.Color.white);
-
-            // rl.gl.rlEnableBackfaceCulling();
-            for (&self.quads) |*quad| {
-                // var model = try rl.loadModelFromMesh(quad.mesh);
-                // model.materials[0] = quad.material;
-                // model.draw(position, 1.0, rl.Color.white);
-
-                // try quad.draw(position, 1.0);
-                rl.drawMesh(quad.mesh, quad.material, quad.transform);
+        pub fn draw(self: *@This(), world_transform: rl.Matrix) !void {
+            const axis, const angle = core.util.transformAxisAngle(world_transform);
+            const position =
+                core.util.transformPosition(world_transform);
+            rl.drawModelEx(self.model, position, axis, angle, rl.Vector3.one(), rl.Color.white);
+            // Draw faces
+            switch (self._type) {
+                .six => drawCubeTexture(self.quad_texture, position, 1.001, 1.001, 1.001, rl.Color.white),
             }
         }
     };
