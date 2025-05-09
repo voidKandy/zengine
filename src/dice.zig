@@ -78,27 +78,27 @@ pub fn Die(comptime _type: DieType, comptime numbers_atlas: []const u8) type {
                 // TOP
                 .{
                     rl.Matrix.identity(),
-                    rl.Vector3.init(0.0, 0.5, 0.0),
+                    rl.Vector3.init(0.0, 0.5, -0.5),
                 },
                 // BOTTOM
                 .{
                     rl.Matrix.rotateX(180.0 * deg2rad),
-                    rl.Vector3.init(0.0, -0.5, 0.0),
+                    rl.Vector3.init(0.0, -0.5, -0.5),
                 },
                 // RIGHT
                 .{
                     rl.Matrix.rotateXYZ(rl.Vector3.init(90.0 * deg2rad, 0.0, -90.0 * deg2rad)),
-                    rl.Vector3.init(0.5, 0.0, 0.0),
+                    rl.Vector3.init(0.5, 0.0, -0.5),
                 },
                 // LEFT
                 .{
                     rl.Matrix.rotateXYZ(rl.Vector3.init(90.0 * deg2rad, 0.0, 90.0 * deg2rad)),
-                    rl.Vector3.init(-0.5, 0.0, 0.0),
+                    rl.Vector3.init(-0.5, 0.0, -0.5),
                 },
                 // FRONT
                 .{
                     rl.Matrix.rotateX(90.0 * deg2rad),
-                    rl.Vector3.init(0.0, 0.0, 0.5),
+                    rl.Vector3.init(0.0, 0.0, -0.5),
                 },
                 // BACK
                 .{
@@ -171,8 +171,10 @@ pub fn Die(comptime _type: DieType, comptime numbers_atlas: []const u8) type {
         }
 
         pub fn draw(self: *@This(), position: rl.Vector3) !void {
+            // _ = position;
             rl.drawModel(self.model, position, 1.0, rl.Color.white);
 
+            // rl.gl.rlEnableBackfaceCulling();
             for (&self.quads) |*quad| {
                 // var model = try rl.loadModelFromMesh(quad.mesh);
                 // model.materials[0] = quad.material;
