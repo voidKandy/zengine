@@ -31,6 +31,182 @@ pub const DieType =
         }
     };
 
+fn drawCubeWithTransformMatrix(texture: rl.Texture2D, transform: rl.Matrix, width: f32, height: f32, length: f32, color: rl.Color) void {
+    gl.rlSetTexture(texture.id);
+    const pos = core.util.transformPosition(transform);
+    const x = pos.x;
+    const y = pos.y;
+    const z = pos.z;
+    // Apply the transformation matrix directly
+    gl.rlBegin(gl.rl_quads);
+    gl.rlColor4ub(color.r, color.g, color.b, color.a);
+
+    const faces_data = [6]struct { normal: [3]f32, coords: [4]struct {
+        tex_coords: [2]f32,
+        vertex_coords: [3]f32,
+    } }{
+        // Front Face (+Z)
+        .{ .normal = [_]f32{ 0.0, 0.0, 1.0 }, .coords = .{
+            .{
+                .tex_coords = [_]f32{ 0.0, 0.0 },
+                .vertex_coords = [_]f32{ x - width / 2, y - height / 2, z + length / 2 },
+            },
+            .{
+                .tex_coords = [_]f32{ 1.0, 0.0 },
+                .vertex_coords = [_]f32{ x + width / 2, y - height / 2, z + length / 2 },
+            },
+            .{
+                .tex_coords = [_]f32{ 1.0, 1.0 },
+                .vertex_coords = [_]f32{ x + width / 2, y + height / 2, z + length / 2 },
+            },
+            .{
+                .tex_coords = [_]f32{ 0.0, 1.0 },
+                .vertex_coords = [_]f32{ x - width / 2, y + height / 2, z + length / 2 },
+            },
+        } },
+        // Back Face (-Z)
+        .{ .normal = [_]f32{ 0.0, 0.0, -1.0 }, .coords = .{
+            .{
+                .tex_coords = [_]f32{ 1.0, 0.0 },
+                .vertex_coords = [_]f32{ x - width / 2, y - height / 2, z - length / 2 },
+            },
+            .{
+                .tex_coords = [_]f32{ 1.0, 1.0 },
+                .vertex_coords = [_]f32{ x - width / 2, y + height / 2, z - length / 2 },
+            },
+            .{
+                .tex_coords = [_]f32{ 0.0, 1.0 },
+                .vertex_coords = [_]f32{ x + width / 2, y + height / 2, z - length / 2 },
+            },
+            .{
+                .tex_coords = [_]f32{ 0.0, 0.0 },
+                .vertex_coords = [_]f32{ x + width / 2, y - height / 2, z - length / 2 },
+            },
+        } },
+        // Top Face (+Y)
+        .{ .normal = [_]f32{ 0.0, 1.0, 0.0 }, .coords = .{
+            .{
+                .tex_coords = [_]f32{ 0.0, 1.0 },
+                .vertex_coords = [_]f32{ x - width / 2, y + height / 2, z - length / 2 },
+            },
+            .{
+                .tex_coords = [_]f32{ 0.0, 0.0 },
+                .vertex_coords = [_]f32{ x - width / 2, y + height / 2, z + length / 2 },
+            },
+            .{
+                .tex_coords = [_]f32{ 1.0, 0.0 },
+                .vertex_coords = [_]f32{ x + width / 2, y + height / 2, z + length / 2 },
+            },
+            .{
+                .tex_coords = [_]f32{ 1.0, 1.0 },
+                .vertex_coords = [_]f32{ x + width / 2, y + height / 2, z - length / 2 },
+            },
+        } },
+        // Bottom Face (-Y)
+        .{ .normal = [_]f32{ 0.0, -1.0, 0.0 }, .coords = .{
+            .{
+                .tex_coords = [_]f32{ 1.0, 1.0 },
+                .vertex_coords = [_]f32{ x - width / 2, y - height / 2, z - length / 2 },
+            },
+            .{
+                .tex_coords = [_]f32{ 0.0, 1.0 },
+                .vertex_coords = [_]f32{ x + width / 2, y - height / 2, z - length / 2 },
+            },
+            .{
+                .tex_coords = [_]f32{ 0.0, 0.0 },
+                .vertex_coords = [_]f32{ x + width / 2, y - height / 2, z + length / 2 },
+            },
+            .{
+                .tex_coords = [_]f32{ 1.0, 0.0 },
+                .vertex_coords = [_]f32{ x - width / 2, y - height / 2, z + length / 2 },
+            },
+        } },
+        // Right Face (+X)
+        .{ .normal = [_]f32{ 1.0, 0.0, 0.0 }, .coords = .{
+            .{
+                .tex_coords = [_]f32{ 1.0, 0.0 },
+                .vertex_coords = [_]f32{ x + width / 2, y - height / 2, z - length / 2 },
+            },
+            .{
+                .tex_coords = [_]f32{ 1.0, 1.0 },
+                .vertex_coords = [_]f32{ x + width / 2, y + height / 2, z - length / 2 },
+            },
+            .{
+                .tex_coords = [_]f32{ 0.0, 1.0 },
+                .vertex_coords = [_]f32{ x + width / 2, y + height / 2, z + length / 2 },
+            },
+            .{
+                .tex_coords = [_]f32{ 0.0, 0.0 },
+                .vertex_coords = [_]f32{ x + width / 2, y - height / 2, z + length / 2 },
+            },
+        } },
+        // Left Face (-X)
+        .{ .normal = [_]f32{ -1.0, 0.0, 0.0 }, .coords = .{
+            .{
+                .tex_coords = [_]f32{ 0.0, 0.0 },
+                .vertex_coords = [_]f32{ x - width / 2, y - height / 2, z - length / 2 },
+            },
+            .{
+                .tex_coords = [_]f32{ 1.0, 0.0 },
+                .vertex_coords = [_]f32{ x - width / 2, y - height / 2, z + length / 2 },
+            },
+            .{
+                .tex_coords = [_]f32{ 1.0, 1.0 },
+                .vertex_coords = [_]f32{ x - width / 2, y + height / 2, z + length / 2 },
+            },
+            .{
+                .tex_coords = [_]f32{ 0.0, 1.0 },
+                .vertex_coords = [_]f32{ x - width / 2, y + height / 2, z - length / 2 },
+            },
+        } },
+    };
+
+    for (faces_data) |d| {
+        const normal =
+            rl.Vector3{
+                .x = d.normal[0] * transform.m0 + d.normal[1] * transform.m4 + d.normal[2] * transform.m8,
+                .y = d.normal[0] * transform.m1 + d.normal[1] * transform.m5 + d.normal[2] * transform.m9,
+                .z = d.normal[0] * transform.m2 + d.normal[1] * transform.m6 + d.normal[2] * transform.m10,
+            };
+
+        gl.rlNormal3f(
+            normal.x,
+            normal.y,
+            normal.z,
+        );
+
+        for (d.coords) |coords| {
+            const translation = rl.Matrix.translate(
+                coords.vertex_coords[0],
+                coords.vertex_coords[1],
+                coords.vertex_coords[2],
+            );
+
+            const vertex_coords = core.util.transformPosition(rl.Matrix.multiply(translation, transform));
+
+            gl.rlTexCoord2f(
+                coords.tex_coords[0],
+                coords.tex_coords[1],
+            );
+            gl.rlVertex3f(
+                vertex_coords.x,
+                vertex_coords.y,
+                vertex_coords.z,
+            );
+        }
+    }
+
+    gl.rlEnd();
+
+    gl.rlSetTexture(0);
+}
+
+// Helper function to apply the transformation matrix to a vertex and render it
+fn transformVertex(x: f32, y: f32, z: f32, transform_matrix: rl.Matrix) struct { f32, f32, f32 } {
+    const transformed_vertex = transform_matrix.multiply(rl.Matrix.translate(x, y, z));
+    const pos = core.util.transformPosition(transformed_vertex);
+    return .{ pos.x, pos.y, pos.z };
+}
 // Draw cube textured
 // NOTE: Cube position is the center position
 fn drawCubeTexture(texture: rl.Texture2D, position: rl.Vector3, width: f32, height: f32, length: f32, color: rl.Color) void {
@@ -254,7 +430,7 @@ pub fn Die(comptime numbers_atlas_path: [:0]const u8) type {
             rl.drawModelEx(self.model, position, axis, angle, rl.Vector3.one(), rl.Color.white);
             // Draw faces
             switch (self._type) {
-                .six => drawCubeTexture(self.quad_texture, position, 1.001, 1.001, 1.001, rl.Color.white),
+                .six => drawCubeWithTransformMatrix(self.quad_texture, world_transform, 1.001, 1.001, 1.001, rl.Color.white),
             }
         }
     };

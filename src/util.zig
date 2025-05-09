@@ -1,6 +1,7 @@
 const rl = @import("raylib");
 const std = @import("std");
 const zbt = @import("zbullet");
+const zm = @import("zmath");
 
 /// Translation (x = m12, y = m13, z = m14)
 /// ```
@@ -17,17 +18,40 @@ pub fn transformAxisAngle(m: rl.Matrix) struct {
     rl.Vector3,
     f32,
 } {
-    const epsilon = 0.01;
-    const epsilon2 = 0.1;
-    _ = epsilon2;
+    // Strip translation components
+    const stripped = rl.Matrix{
+        .m0 = m.m0,
+        .m1 = m.m1,
+        .m2 = m.m2,
+        .m3 = m.m3,
+        .m4 = m.m4,
+        .m5 = m.m5,
+        .m6 = m.m6,
+        .m7 = m.m7,
+        .m8 = m.m8,
+        .m9 = m.m9,
+        .m10 = m.m10,
+        .m11 = m.m11,
+        .m12 = 0.0,
+        .m13 = 0.0,
+        .m14 = 0.0,
+        .m15 = m.m15,
+    };
 
-    const angle = @cos((m.m0 + m.m5 + m.m10 - 1.0) / 2.0);
+    // Convert to quaternion using zmath for stability
+    // x,y,z,w
+    const quat = zm.quatFromMat(@as(zm.Mat, @bitCast(stripped)));
 
-    var axis = rl.Vector3{ .x = 0, .y = 0, .z = 0 };
+    // Compute angle
+    const angle = 2.0 * std.math.acos(quat[3]);
 
-    if (angle < epsilon) {
-        axis.x = 1.0; // arbitrary
-    }
+    // Compute axis
+    const s = @sqrt(1.0 - quat[3] * quat[3]);
+    const axis = if (s < 0.001) rl.Vector3.init(1.0, 0.0, 0.0) else rl.Vector3{
+        .x = quat[0] / s,
+        .y = quat[1] / s,
+        .z = quat[2] / s,
+    };
 
     return .{ axis, angle };
 }
