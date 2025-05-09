@@ -65,84 +65,85 @@ pub fn Die(comptime _type: DieType, comptime numbers_atlas: []const u8) type {
             var model = try rl.loadModelFromMesh(mesh);
             model.materials[0] = material;
 
-            const quad_texture = try rl.loadTexture(zeroTermAtlasPath());
-            var quad_material = try rl.loadMaterialDefault();
-            quad_material.maps[@intFromEnum(rl.MATERIAL_MAP_DIFFUSE)].texture = quad_texture;
+            const numbers_atlas_img = try rl.loadImage(zeroTermAtlasPath());
+
             var quads: [NUM_QUADS]OverlayQuad = undefined;
             // CURRENTLY ONLY WORKS FOR A D6
             // Compute UVs for index `i` (0–5)
             const cols = 2;
-            const rows = 3;
+            // const rows = 3;
 
-            const rotations = [_]rl.Matrix{
-                rl.Matrix.rotateX(90.0), // Face 1: Top (Rotate 90° around X-axis)
-                rl.Matrix.rotateX(-90.0), // Face 2: Bottom (Rotate -90° around X-axis)
-                rl.Matrix.rotateY(90.0), // Face 3: Left (Rotate 90° around Y-axis)
-                rl.Matrix.rotateY(-90.0), // Face 4: Right (Rotate -90° around Y-axis)
-                rl.Matrix.rotateZ(90.0), // Face 5: Front (Rotate 90° around Z-axis)
-                rl.Matrix.rotateZ(-90.0), // Face 6: Back (Rotate -90° around Z-axis)
-            };
-
-            const positions = [_]rl.Vector3{
-                rl.Vector3.init(0.0, 0.5, 0.0), // Position for Face 1 (Top)
-                rl.Vector3.init(0.0, -0.5, 0.0), // Position for Face 2 (Bottom)
-                rl.Vector3.init(-0.5, 0.0, 0.0), // Position for Face 3 (Left)
-                rl.Vector3.init(0.5, 0.0, 0.0), // Position for Face 4 (Right)
-                rl.Vector3.init(0.0, 0.0, 0.5), // Position for Face 5 (Front)
-                rl.Vector3.init(0.0, 0.0, -0.5), // Position for Face 6 (Back)
+            const deg2rad = std.math.pi / 180.0;
+            const rotations_and_positions = [_]struct { rl.Matrix, rl.Vector3 }{
+                // TOP
+                .{
+                    rl.Matrix.identity(),
+                    rl.Vector3.init(0.0, 0.5, 0.0),
+                },
+                // BOTTOM
+                .{
+                    rl.Matrix.rotateX(180.0 * deg2rad),
+                    rl.Vector3.init(0.0, -0.5, 0.0),
+                },
+                // RIGHT
+                .{
+                    rl.Matrix.rotateXYZ(rl.Vector3.init(90.0 * deg2rad, 0.0, -90.0 * deg2rad)),
+                    rl.Vector3.init(0.5, 0.0, 0.0),
+                },
+                // LEFT
+                .{
+                    rl.Matrix.rotateXYZ(rl.Vector3.init(90.0 * deg2rad, 0.0, 90.0 * deg2rad)),
+                    rl.Vector3.init(-0.5, 0.0, 0.0),
+                },
+                // FRONT
+                .{
+                    rl.Matrix.rotateX(90.0 * deg2rad),
+                    rl.Vector3.init(0.0, 0.0, 0.5),
+                },
+                // BACK
+                .{
+                    rl.Matrix.rotateX(180.0 * deg2rad),
+                    rl.Vector3.init(0.0, 0.0, -0.5),
+                },
             };
 
             for (&quads, 0..) |*q, i| {
-                const rotation = rotations[i];
-                const position = positions[i];
+                const rotation, const position = rotations_and_positions[i];
                 const col = i % cols;
                 const row = i / cols;
 
-                const u_min = @as(f32, @floatFromInt(col)) / @as(f32, @floatFromInt(cols));
-                const v_min = @as(f32, @floatFromInt(row)) / @as(f32, @floatFromInt(rows));
-                const u_max = (@as(f32, @floatFromInt(col + 1))) / @as(f32, @floatFromInt(cols));
-                const v_max = (@as(f32, @floatFromInt(row + 1))) / @as(f32, @floatFromInt(rows));
+                // const u_min = @as(f32, @floatFromInt(col)) / @as(f32, @floatFromInt(cols));
+                // const v_min = @as(f32, @floatFromInt(row)) / @as(f32, @floatFromInt(rows));
+                // const u_max = (@as(f32, @floatFromInt(col + 1))) / @as(f32, @floatFromInt(cols));
+                // const v_max = (@as(f32, @floatFromInt(row + 1))) / @as(f32, @floatFromInt(rows));
+
+                const rect = rl.Rectangle{
+                    .x = @as(f32, @floatFromInt(col)) * 256.0,
+                    .y = @as(f32, @floatFromInt(row)) * 256.0,
+                    .width = 256.0,
+                    .height = 256.0,
+                };
+                // const rect =
+                //     rl.Rectangle{ .x = u_min, .y = v_min, .width = 256.0, .height = 256.0 };
+                warn(
+                    \\ CROPPING IMAGE WITH RECTANGLE: {any}
+                , .{rect});
+                const quad_img = numbers_atlas_img.copyRec(rect);
+                const quad_tex = try rl.loadTextureFromImage(quad_img);
+                var quad_material = try rl.loadMaterialDefault();
+                quad_material.maps[@intFromEnum(rl.MATERIAL_MAP_DIFFUSE)].texture = quad_tex;
+                quad_material.maps[@intFromEnum(rl.MATERIAL_MAP_DIFFUSE)].color = switch (i) {
+                    0 => rl.Color.blue,
+                    1 => rl.Color.orange,
+                    2 => rl.Color.red,
+                    3 => rl.Color.green,
+                    4 => rl.Color.pink,
+                    5 => rl.Color.yellow,
+                    else => rl.Color.white,
+                };
 
                 // Create a quad mesh
-                var plane = rl.genMeshPlane(1.0, 1.0, 1, 1); // Normalized size
-                warn(
-                    \\ PLANE VERTEX COUNT: {d}
-                , .{plane.vertexCount});
-                // const texcoords = plane.texcoords[0..@as(usize, @intCast(plane.vertexCount * 2))];
-
-                // Top Left Position in texture
-                plane.texcoords[0] = u_min;
-                plane.texcoords[1] = v_min;
-
-                // Top Right position in texture
-                plane.texcoords[2] = u_max;
-                plane.texcoords[3] = v_min;
-
-                // Bottom Right Position in texture
-                plane.texcoords[4] = u_max;
-                plane.texcoords[5] = v_max;
-
-                // Bottom Left Position in texture
-                plane.texcoords[6] = u_min;
-                plane.texcoords[7] = v_max;
-
-                warn(
-                    \\
-                    \\ FACE {}
-                    \\ UMIN: {d}
-                    \\ UMAX: {d}
-                    \\ VMIN: {d}
-                    \\ VMAX: {d}
-                    \\
-                    \\ TOP LEFT: ({d}, {d})
-                    \\ TOP RIGHT: ({d}, {d})
-                    \\ BOTTOM RIGHT: ({d}, {d})
-                    \\ BOTTOM LEFT: ({d}, {d})
-                , .{
-                    i,                  u_min,              v_min,              u_max,              v_max,
-                    plane.texcoords[0], plane.texcoords[1], plane.texcoords[2], plane.texcoords[3], plane.texcoords[4],
-                    plane.texcoords[5], plane.texcoords[6], plane.texcoords[7],
-                });
+                const plane = rl.genMeshPlane(1.0, 1.0, 256, 256); // Normalized size
 
                 const transform = trans: {
                     var t =
@@ -151,6 +152,7 @@ pub fn Die(comptime _type: DieType, comptime numbers_atlas: []const u8) type {
                     t = t.multiply(rl.Matrix.translate(position.x, position.y, position.z));
                     break :trans t;
                 };
+                // _ = position;
 
                 q.* = OverlayQuad{
                     .mesh = plane,
@@ -172,7 +174,12 @@ pub fn Die(comptime _type: DieType, comptime numbers_atlas: []const u8) type {
             rl.drawModel(self.model, position, 1.0, rl.Color.white);
 
             for (&self.quads) |*quad| {
-                try quad.draw(position, 1.0);
+                // var model = try rl.loadModelFromMesh(quad.mesh);
+                // model.materials[0] = quad.material;
+                // model.draw(position, 1.0, rl.Color.white);
+
+                // try quad.draw(position, 1.0);
+                rl.drawMesh(quad.mesh, quad.material, quad.transform);
             }
         }
     };
@@ -185,22 +192,4 @@ pub const OverlayQuad = struct {
     material: rl.Material,
     // rectangle: rl.Rectangle,
     transform: rl.Matrix,
-
-    fn draw(self: *@This(), base_pos: rl.Vector3, base_scale: f32) rl.RaylibError!void {
-        _ = base_pos;
-        _ = base_scale;
-        // var material = try rl.loadMaterialDefault();
-        // material.maps[0].texture = self.texture;
-
-        rl.drawMesh(self.mesh, self.material, self.transform);
-        // self.texture.drawRec(source: Rectangle, position: Vector2, tint: Color)
-        // rl.drawModelEx(
-        //     self.model,
-        //     base_pos,
-        //     .{ 0, 0, 0 },
-        //     0,
-        //     rl.Vector3.init(base_scale, base_scale, base_scale),
-        //     rl.Color.white,
-        // );
-    }
 };
