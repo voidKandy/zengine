@@ -79,6 +79,7 @@ const SyncPhysicsSystem = Ecs.System(&[_]Ecs.ComponentsEnum{ .transform, .body }
 pub fn draw(myecs: *Ecs, state: *core.state.State) void {
     rl.beginMode3D(state.camera);
     defer rl.endMode3D();
+
     var all: [MAX_N_ENTITIES]core.ecs.Entity = undefined;
     @memset(&all, 0);
     const phys_mesh_sig = s: {
@@ -133,9 +134,9 @@ pub fn main() anyerror!void {
     }
     std.log.warn("INITIALIZED ALLOCATOR\n", .{});
 
-    const screenWidth = 800;
-    const screenHeight = 450;
-    rl.initWindow(screenWidth, screenHeight, "raylib-zig [core] example - basic window");
+    const screen_width = 800;
+    const screen_height = 450;
+    rl.initWindow(screen_width, screen_height, "raylib-zig [core] example - basic window");
     defer rl.closeWindow(); // Close window and OpenGL context
     rl.setTargetFPS(60); // Set our game to run at 60 frames-per-second
 
@@ -150,30 +151,16 @@ pub fn main() anyerror!void {
     defer zbt.deinit();
     var physics_world = zbt.initWorld();
 
-    defer {
-        const num_bodies = @as(usize, @intCast(physics_world.getNumBodies()));
-        for (0..num_bodies) |_| {
-            const body = physics_world.getBody(0);
-            physics_world.removeBody(body);
-        }
-        physics_world.deinit();
-    }
-    // defer physics_world.deinit();
     const default_gravity: f32 = 10.0;
     physics_world.setGravity(&.{ 0.0, -default_gravity, 0.0 });
     var physics_debug = try arena.allocator().create(zbt.DebugDrawer);
-    // defer allocator.destroy(physics_debug);
     physics_debug.* = zbt.DebugDrawer.init(arena.allocator());
-
     physics_world.debugSetDrawer(&physics_debug.getDebugDraw());
-    physics_world.debugSetMode(zbt.DebugMode.user_only);
+    physics_world.debugSetMode(.{ .draw_wireframe = true, .draw_aabb = true });
 
-    // Camera
-    //---
     var state = core.state.State{
-        .window_height = screenHeight,
-        .window_width = screenWidth,
-        // .entities = core.state.EntityArray.init(),
+        .window_height = screen_height,
+        .window_width = screen_width,
         .camera = init_camera(),
         .pick = .{
             .p2p = zbt.allocPoint2PointConstraint(),
@@ -184,15 +171,28 @@ pub fn main() anyerror!void {
         },
     };
 
-    defer state.pick.p2p.dealloc();
+    // should be in a function
+    defer {
+        state.pick.p2p.dealloc();
+        const num_bodies = @as(usize, @intCast(state.physics.world.getNumBodies()));
+        for (0..num_bodies) |_| {
+            const body = state.physics.world.getBody(0);
+            state.physics.world.removeBody(body);
+        }
+        state.physics.debug.deinit();
+        state.physics.world.deinit();
+    }
 
     const boxshape = zbt.initBoxShape(&[_]f32{ 1.0, 1.0, 1.0 });
     defer boxshape.deinit();
+
+    var cube_entity_idx: usize = undefined;
 
     // CUBE ENTITY
     // ---
     {
         var handle = try ecs.entities.register();
+        cube_entity_idx = handle.index() orelse @panic("NO INDEX??");
 
         var material = try rl.loadMaterialDefault();
         const shader = try rl.loadShader("resources/shaders/basic.vs", "resources/shaders/basic.fs");
@@ -217,7 +217,8 @@ pub fn main() anyerror!void {
 
     // FLOOR ENTITY
     // ---
-    const floor_shape = zbt.initBoxShape(&[_]f32{ 10.0, 0.2, 10.0 });
+    const floor_shape = zbt.initBoxShape(&[_]f32{ 10.0, 0.1, 10.0 });
+
     defer floor_shape.deinit();
     {
         var handle = try ecs.entities.register();
@@ -240,20 +241,59 @@ pub fn main() anyerror!void {
         try handle.addComponent(.body, &body_id);
     }
 
+    const mouse_sensitivity: f32 = 0.005;
+
+    var distance: f32 = 10.0;
+    var yaw: f32 = 0.0; // Horizontal angle (radians)
+    var pitch: f32 = 0.5; // Vertical angle (radians, avoid -PI/2 and PI/2)
+
     // Main game loop
     while (!rl.windowShouldClose()) {
         // Update
         //----------------------------------------------------------------------------------
         const dt = rl.getFrameTime();
-        _ = physics_world.stepSimulation(dt, .{});
+        _ = state.physics.world.stepSimulation(dt, .{});
         try ecs.runSystems(&state);
-        physics_world.debugDrawAll();
+
+        // CAMERA TRACKING THE DICE
+        // dont love how this is done for now
+        // ---
+        // Mouse control
+        const mouse_delta = rl.getMouseDelta();
+        yaw += mouse_delta.x * mouse_sensitivity;
+        pitch += mouse_delta.y * mouse_sensitivity;
+
+        // Clamp pitch to avoid flipping
+        const pitch_limit: f32 = std.math.pi / 2.0 - 0.01;
+        if (pitch > pitch_limit) pitch = pitch_limit;
+        if (pitch < -pitch_limit) pitch = -pitch_limit;
+
+        // Zoom with mouse wheel
+        distance -= rl.getMouseWheelMove() * 1.0;
+        if (distance < 2.0) distance = 2.0;
+        if (distance > 50.0) distance = 50.0;
+
+        // Convert spherical to cartesian
+        const cube_entity_trans = ecs.components.access(rl.Matrix, .transform, cube_entity_idx) orelse @panic("NO CUBE??");
+        const target = core.util.extractPosition(cube_entity_trans.*);
+        const new_camera_pos = Vector3.init(
+            //
+            target.x + distance * std.math.cos(pitch) * std.math.sin(yaw),
+            //
+            target.y + distance * std.math.sin(pitch),
+            //
+            target.z + distance * std.math.cos(pitch) * std.math.cos(yaw));
+        state.camera.position = new_camera_pos;
+        state.camera.target = target;
 
         // Draw
-        //----------------------------------------------------------------------------------
+        //---
         rl.beginDrawing();
         defer rl.endDrawing();
-        rl.clearBackground(rl.Color.black);
+        rl.clearBackground(rl.Color.white);
+
+        state.physics.world.debugDrawAll();
+        state.physics.debug.lines.clearRetainingCapacity();
         draw(&ecs, &state);
 
         rl.drawFPS(10, 10);
