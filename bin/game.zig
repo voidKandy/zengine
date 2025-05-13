@@ -290,7 +290,7 @@ pub fn main() anyerror!void {
         //---
         rl.beginDrawing();
         defer rl.endDrawing();
-        rl.clearBackground(rl.Color.white);
+        rl.clearBackground(rl.Color.black);
 
         state.physics.world.debugDrawAll();
         state.physics.debug.lines.clearRetainingCapacity();
