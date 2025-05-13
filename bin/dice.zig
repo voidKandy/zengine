@@ -59,7 +59,7 @@ pub fn main() !void {
 
             const mvp_loc = rl.getShaderLocation(shader, "mvp");
             var model_matrix = rl.Matrix.identity();
-            model_matrix = rl.Matrix.multiply(model_matrix, d6_world_transform);
+            model_matrix = rl.Matrix.multiply(d6_world_transform, model_matrix);
             const mvp = rl.Matrix.multiply(rl.getCameraMatrix(camera), model_matrix);
             rl.setShaderValueMatrix(shader, mvp_loc, mvp);
             rl.gl.rlEnableBackfaceCulling();

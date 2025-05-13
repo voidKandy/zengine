@@ -3,18 +3,18 @@ const std = @import("std");
 const zbt = @import("zbullet");
 const zm = @import("zmath");
 
-/// Translation (x = m12, y = m13, z = m14)
+/// **Position** = (x = m12, y = m13, z = m14)
 /// ```
 /// | m0  m4  m8   m12 |
 /// | m1  m5  m9   m13 |
 /// | m2  m6  m10  m14 |
 /// | m3  m7  m11  m15 |
 /// ```
-pub fn transformPosition(transform: rl.Matrix) rl.Vector3 {
+pub fn extractPosition(transform: rl.Matrix) rl.Vector3 {
     return rl.Vector3.init(transform.m12, transform.m13, transform.m14);
 }
 
-pub fn transformAxisAngle(m: rl.Matrix) struct {
+pub fn extractAxisAngle(m: rl.Matrix) struct {
     rl.Vector3,
     f32,
 } {

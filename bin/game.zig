@@ -101,7 +101,7 @@ pub fn draw(myecs: *Ecs, state: *core.state.State) void {
     , .{ phys_mesh_sig.mask, die_sig.mask });
 
     for (0.., myecs.entities.manager.signatures) |i, sig| {
-        std.log.warn("SIG: {b}\n", .{sig.mask});
+        // std.log.warn("SIG: {b}\n", .{sig.mask});
 
         if (sig.supersetOf(phys_mesh_sig) or sig.supersetOf(die_sig)) {
             std.log.warn("IDX: {}\n", .{i});
