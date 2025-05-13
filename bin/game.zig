@@ -26,6 +26,7 @@ const Ecs = core.ecs.Ecs(MAX_N_ENTITIES, MAX_N_SYSTEMS, core.state.State, &[_]co
     .{ "material", rl.Material },
     .{ "transform", rl.Matrix },
     .{ "shape", zbt.Shape },
+    .{ "player_interact", core.player.PlayerInteract.Signature },
     // .{ "mass", f32 },
     // Body can be gotten by querying the physics engine
     // Instead of storing the rigidbody, we store the index of the body in the physics engine
@@ -72,6 +73,71 @@ const SyncPhysicsSystem = Ecs.System(&[_]Ecs.ComponentsEnum{ .transform, .body }
     }
 }.sync);
 
+const PlayerInteractSystem = Ecs.System(&[_]Ecs.ComponentsEnum{.player_interact}, struct {
+    fn run(entities: []core.ecs.Entity, myecs: *Ecs, state: *core.state.State) void {
+        std.log.warn("IN PLAYER SYSTEM\n", .{});
+        for (entities) |e| {
+            const idx = myecs.entities.manager.index_map.get(e).?;
+
+            const interact = myecs.components.access(core.player.PlayerInteract, .player_interact, idx) orelse continue;
+            // const mesh = myecs.components.access(rl.Mesh, .mesh, idx).?;
+            // _ = mesh;
+
+            switch (interact.*) {
+                .pickup => {
+                    const transform = myecs.components.access(rl.Matrix, .transform, idx).?;
+                    _ = transform;
+                },
+                .push => {
+                    const body_id = myecs.components.access(i32, .body, idx).?;
+                    _ = body_id;
+                },
+            }
+
+            if (rl.isMouseButtonPressed(rl.MouseButton.left)) {
+                const ray = rl.getScreenToWorldRay(rl.getMousePosition(), state.camera);
+
+                const ray_from = [3]f32{
+                    ray.position.x,
+                    ray.position.y,
+                    ray.position.z,
+                };
+
+                const ray_to = [3]f32{
+                    ray.position.x + ray.direction.x * 1000.0,
+                    ray.position.y + ray.direction.y * 1000.0,
+                    ray.position.z + ray.direction.z * 1000.0,
+                };
+
+                var result: zbt.RayCastResult = undefined;
+                const is_hit = state.physics.world.rayTestClosest(
+                    // zm.arr3Ptr(&mousepos),
+                    &ray_from,
+                    &ray_to,
+                    .{ .default = true },
+                    zbt.CollisionFilter.all,
+                    .{ .use_gjk_convex_test = true },
+                    &result,
+                );
+
+                if (is_hit) if (result.body) |b| {
+                    std.log.warn(
+                        \\ HIT!!!
+                    , .{});
+                    const impulse_strength: f32 = 20.0;
+
+                    const impulse = [3]f32{
+                        ray.direction.x * impulse_strength,
+                        ray.direction.y * impulse_strength,
+                        ray.direction.z * impulse_strength,
+                    };
+                    b.applyCentralImpulse(&impulse);
+                };
+            }
+        }
+    }
+}.run);
+
 /// Not **everything** has to be done in systems
 /// I have opted to use procedures for drawing logic
 /// This is because I would have to add complexity to systems to allow some run during drawing
@@ -96,18 +162,18 @@ pub fn draw(myecs: *Ecs, state: *core.state.State) void {
         break :s s;
     };
 
-    std.log.warn(
-        \\ PhysMesh Sig: {b}
-        \\ die Sig: {b}
-    , .{ phys_mesh_sig.mask, die_sig.mask });
+    // std.log.warn(
+    //     \\ PhysMesh Sig: {b}
+    //     \\ die Sig: {b}
+    // , .{ phys_mesh_sig.mask, die_sig.mask });
 
     for (0.., myecs.entities.manager.signatures) |i, sig| {
         // std.log.warn("SIG: {b}\n", .{sig.mask});
 
         if (sig.supersetOf(phys_mesh_sig) or sig.supersetOf(die_sig)) {
-            std.log.warn("IDX: {}\n", .{i});
+            // std.log.warn("IDX: {}\n", .{i});
             const identifier = myecs.entities.manager.identifier_map.get(i) orelse break;
-            std.log.warn("DRAWING: {}\n", .{identifier});
+            // std.log.warn("DRAWING: {}\n", .{identifier});
             const idx = myecs.entities.manager.index_map.get(identifier) orelse std.debug.panic("Entity: {} Has no index?\n", .{identifier});
             const transform = myecs.components.access(rl.Matrix, Ecs.ComponentsEnum.transform, idx).?;
             if (myecs.components.access(Die, .die, idx)) |die| {
@@ -144,6 +210,7 @@ pub fn main() anyerror!void {
     var ecs = Ecs.init(&arena);
     defer ecs.deinit();
     try ecs.systems.register(SyncPhysicsSystem{});
+    try ecs.systems.register(PlayerInteractSystem{});
 
     // World Setup
     //---
@@ -213,6 +280,9 @@ pub fn main() anyerror!void {
         const body_id = state.physics.world.getNumBodies();
         state.physics.world.addBody(body);
         try handle.addComponent(.body, &body_id);
+
+        const interact_sig = core.player.PlayerInteract.signature(&[_]core.player.PlayerInteract{ .pickup, .push });
+        try handle.addComponent(.player_interact, &interact_sig);
     }
 
     // FLOOR ENTITY
@@ -293,47 +363,6 @@ pub fn main() anyerror!void {
 
         // Impulse
         // ---
-
-        if (rl.isMouseButtonPressed(rl.MouseButton.left)) {
-            const ray = rl.getScreenToWorldRay(rl.getMousePosition(), state.camera);
-
-            const ray_from = [3]f32{
-                ray.position.x,
-                ray.position.y,
-                ray.position.z,
-            };
-
-            const ray_to = [3]f32{
-                ray.position.x + ray.direction.x * 1000.0,
-                ray.position.y + ray.direction.y * 1000.0,
-                ray.position.z + ray.direction.z * 1000.0,
-            };
-
-            var result: zbt.RayCastResult = undefined;
-            const is_hit = state.physics.world.rayTestClosest(
-                // zm.arr3Ptr(&mousepos),
-                &ray_from,
-                &ray_to,
-                .{ .default = true },
-                zbt.CollisionFilter.all,
-                .{ .use_gjk_convex_test = true },
-                &result,
-            );
-
-            if (is_hit) if (result.body) |b| {
-                std.log.warn(
-                    \\ HIT!!!
-                , .{});
-                const impulse_strength: f32 = 20.0;
-
-                const impulse = [3]f32{
-                    ray.direction.x * impulse_strength,
-                    ray.direction.y * impulse_strength,
-                    ray.direction.z * impulse_strength,
-                };
-                b.applyCentralImpulse(&impulse);
-            };
-        }
 
         // state.pick.p2p.*
         // Draw

@@ -259,6 +259,11 @@ pub fn Ecs(
         pub const Signature = std.bit_set.IntegerBitSet(@intCast(Components.len));
         pub const ComponentsEnum = ComponentsManager.Enum;
 
+        pub inline fn componentType(variant: ComponentsEnum) type {
+            const idx = @intFromEnum(variant);
+            return Components[idx].@"1";
+        }
+
         /// Returns the signature associated with the given components
         pub fn get_signature(components: []ComponentsEnum) Signature {
             var sig = Signature.initEmpty();
@@ -525,6 +530,9 @@ pub fn Ecs(
         /// this is an allocator returned by `ArenaAllocator.allocator()`
         allocator: Allocator,
         entities: EntityManager,
+        /// Systems are currently run sequentially before draw calls
+        /// * less than ideal * ?
+        /// `System` struct are given pre-filtered entities
         systems: SystemManager,
         components: ComponentsManager,
 
@@ -550,12 +558,16 @@ pub fn Ecs(
             while (iter.next()) |e| {
                 const id = e.value_ptr;
                 const idx = e.key_ptr;
-                std.log.warn("RUNNING SYSTEM: {}\n", .{id.*});
 
                 const sig = self.systems.manager.getSignature(id.*) orelse return error.NoSignature;
                 var all: [MaxNEntities]Entity = undefined;
                 @memset(&all, 0);
+
                 if (self.entities.manager.getBySignatureAtLeast(&all, sig)) |entities| {
+                    std.log.warn(
+                        \\ Running system {} on {} entities
+                        \\
+                    , .{ id.*, entities.len });
                     const func = self.systems.all_fns[idx.*] orelse return error.NoFunction;
                     func(entities, self, state);
                 }

@@ -2,8 +2,10 @@ const std = @import("std");
 pub const da = @import("dynamic_array.zig");
 pub const ecs = @import("ecs.zig");
 pub const state = @import("state.zig");
-pub const dice = @import("dice.zig");
 pub const util = @import("util.zig");
+/// Should likely be moved to an outer module
+pub const dice = @import("dice.zig");
+pub const player = @import("player.zig");
 
 test {
     std.testing.refAllDecls(@This());
@@ -220,7 +222,7 @@ fn DayNight(comptime HoursInDay: f32) type {
 
 const GameState = struct {
     time: DayNight(24),
-    player: PlayerState,
+    player_state: PlayerState,
     opposer: PlayerState,
 };
 
@@ -233,9 +235,9 @@ test "game state" {
     // _ = deck;
     std.debug.print("STARTING TEST\n", .{});
 
-    const player = try PlayerState.init_with_shuffle(&deck);
+    const player_state = try PlayerState.init_with_shuffle(&deck);
     const opposer = try PlayerState.init_with_shuffle(&deck);
-    const st = GameState{ .time = DayNight(24).start(6.0), .player = player, .opposer = opposer };
+    const st = GameState{ .time = DayNight(24).start(6.0), .player_state = player_state, .opposer = opposer };
     _ = st;
 }
 
