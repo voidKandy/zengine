@@ -26,7 +26,7 @@ const Ecs = core.ecs.Ecs(MAX_N_ENTITIES, MAX_N_SYSTEMS, core.state.State, &[_]co
     .{ "material", rl.Material },
     .{ "transform", rl.Matrix },
     .{ "shape", zbt.Shape },
-    .{ "player_interact", core.player.PlayerInteract.Signature },
+    .{ "physics_interact", bool },
     // .{ "mass", f32 },
     // Body can be gotten by querying the physics engine
     // Instead of storing the rigidbody, we store the index of the body in the physics engine
@@ -73,28 +73,17 @@ const SyncPhysicsSystem = Ecs.System(&[_]Ecs.ComponentsEnum{ .transform, .body }
     }
 }.sync);
 
-const PlayerInteractSystem = Ecs.System(&[_]Ecs.ComponentsEnum{.player_interact}, struct {
+const PlayerInteractSystem = Ecs.System(&[_]Ecs.ComponentsEnum{.physics_interact}, struct {
     fn run(entities: []core.ecs.Entity, myecs: *Ecs, state: *core.state.State) void {
         std.log.warn("IN PLAYER SYSTEM\n", .{});
         for (entities) |e| {
             const idx = myecs.entities.manager.index_map.get(e).?;
 
-            const interact = myecs.components.access(core.player.PlayerInteract, .player_interact, idx) orelse continue;
+            const interact = myecs.components.access(bool, .physics_interact, idx) orelse continue;
             // const mesh = myecs.components.access(rl.Mesh, .mesh, idx).?;
             // _ = mesh;
 
-            switch (interact.*) {
-                .pickup => {
-                    const transform = myecs.components.access(rl.Matrix, .transform, idx).?;
-                    _ = transform;
-                },
-                .push => {
-                    const body_id = myecs.components.access(i32, .body, idx).?;
-                    _ = body_id;
-                },
-            }
-
-            if (rl.isMouseButtonPressed(rl.MouseButton.left)) {
+            if (interact.* and rl.isMouseButtonPressed(rl.MouseButton.left)) {
                 const ray = rl.getScreenToWorldRay(rl.getMousePosition(), state.camera);
 
                 const ray_from = [3]f32{
@@ -281,8 +270,7 @@ pub fn main() anyerror!void {
         state.physics.world.addBody(body);
         try handle.addComponent(.body, &body_id);
 
-        const interact_sig = core.player.PlayerInteract.signature(&[_]core.player.PlayerInteract{ .pickup, .push });
-        try handle.addComponent(.player_interact, &interact_sig);
+        try handle.addComponent(.physics_interact, &true);
     }
 
     // FLOOR ENTITY
