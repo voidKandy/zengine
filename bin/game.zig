@@ -241,12 +241,17 @@ pub fn main() anyerror!void {
         try handle.addComponent(.body, &body_id);
     }
 
+    // Variables for mouse orbit
+    // should be moved to system eventually
     const mouse_sensitivity: f32 = 0.005;
-
     var distance: f32 = 10.0;
     var yaw: f32 = 0.0; // Horizontal angle (radians)
     var pitch: f32 = 0.5; // Vertical angle (radians, avoid -PI/2 and PI/2)
 
+    // Variables for mouse click
+    // should also be moved to system eventually
+
+    // var ray = zbt.RayCastFlags
     // Main game loop
     while (!rl.windowShouldClose()) {
         // Update
@@ -286,6 +291,51 @@ pub fn main() anyerror!void {
         state.camera.position = new_camera_pos;
         state.camera.target = target;
 
+        // Impulse
+        // ---
+
+        if (rl.isMouseButtonPressed(rl.MouseButton.left)) {
+            const ray = rl.getScreenToWorldRay(rl.getMousePosition(), state.camera);
+
+            const ray_from = [3]f32{
+                ray.position.x,
+                ray.position.y,
+                ray.position.z,
+            };
+
+            const ray_to = [3]f32{
+                ray.position.x + ray.direction.x * 1000.0,
+                ray.position.y + ray.direction.y * 1000.0,
+                ray.position.z + ray.direction.z * 1000.0,
+            };
+
+            var result: zbt.RayCastResult = undefined;
+            const is_hit = state.physics.world.rayTestClosest(
+                // zm.arr3Ptr(&mousepos),
+                &ray_from,
+                &ray_to,
+                .{ .default = true },
+                zbt.CollisionFilter.all,
+                .{ .use_gjk_convex_test = true },
+                &result,
+            );
+
+            if (is_hit) if (result.body) |b| {
+                std.log.warn(
+                    \\ HIT!!!
+                , .{});
+                const impulse_strength: f32 = 20.0;
+
+                const impulse = [3]f32{
+                    ray.direction.x * impulse_strength,
+                    ray.direction.y * impulse_strength,
+                    ray.direction.z * impulse_strength,
+                };
+                b.applyCentralImpulse(&impulse);
+            };
+        }
+
+        // state.pick.p2p.*
         // Draw
         //---
         rl.beginDrawing();
