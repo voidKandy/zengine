@@ -107,9 +107,9 @@ pub fn main() anyerror!void {
         .window_height = screen_height,
         .window_width = screen_width,
         .camera = init_camera(),
-        .pick = .{
-            .p2p = zbt.allocPoint2PointConstraint(),
-        },
+        // .pick = .{
+        //     .p2p = zbt.allocPoint2PointConstraint(),
+        // },
         .physics = .{
             .world = physics_world,
             .debug = physics_debug,
@@ -117,16 +117,7 @@ pub fn main() anyerror!void {
     };
 
     // should be in a function
-    defer {
-        state.pick.p2p.dealloc();
-        const num_bodies = @as(usize, @intCast(state.physics.world.getNumBodies()));
-        for (0..num_bodies) |_| {
-            const body = state.physics.world.getBody(0);
-            state.physics.world.removeBody(body);
-        }
-        state.physics.debug.deinit();
-        state.physics.world.deinit();
-    }
+    defer state.deinit();
 
     const boxshape = zbt.initBoxShape(&[_]f32{ 1.0, 1.0, 1.0 });
     defer boxshape.deinit();

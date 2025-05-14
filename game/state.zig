@@ -17,25 +17,27 @@ pub const State = struct {
         world: zbt.World,
         debug: *zbt.DebugDrawer,
     },
-    pick: struct {
-        body: ?zbt.Body = null,
-        p2p: zbt.Point2PointConstraint,
-        saved_linear_damping: f32 = 0.0,
-        saved_angular_damping: f32 = 0.0,
-        saved_activation_state: zbt.BodyActivationState = .active,
-        distance: f32 = 0.0,
-    },
+    // pick: struct {
+    //     body: ?zbt.Body = null,
+    //     p2p: zbt.Point2PointConstraint,
+    //     saved_linear_damping: f32 = 0.0,
+    //     saved_angular_damping: f32 = 0.0,
+    //     saved_activation_state: zbt.BodyActivationState = .active,
+    //     distance: f32 = 0.0,
+    // },
 
     const Self = @This();
 
     const camera_fovy: f32 = std.math.pi / @as(f32, 3.0);
 
-    /// Should only be called *once*
-    /// Cleans up **all** bodies in world
-    pub fn cleanup_physics_world_entities(self: *Self) void {
-        while (self.entities.pop()) |ent| {
-            defer ent.deinit();
-            self.physics.world.removeBody(ent.body);
+    pub fn deinit(self: @This()) void {
+        // self.pick.p2p.dealloc();
+        const num_bodies = @as(usize, @intCast(self.physics.world.getNumBodies()));
+        for (0..num_bodies) |_| {
+            const body = self.physics.world.getBody(0);
+            self.physics.world.removeBody(body);
         }
+        self.physics.debug.deinit();
+        self.physics.world.deinit();
     }
 };
