@@ -1,10 +1,11 @@
 const rl = @import("raylib");
 const std = @import("std");
 const zbt = @import("zbullet");
-const core = @import("engine_core");
+const engine = @import("engine_core");
+const game = @import("game_core");
 const zm = @import("zmath");
-
 const Vector3 = rl.Vector3;
+const Ecs = game.Ecs;
 
 fn init_camera() rl.Camera3D {
     const camera = rl.Camera3D{
@@ -17,126 +18,14 @@ fn init_camera() rl.Camera3D {
     return camera;
 }
 
-const Die = core.dice.Die("resources/numbers.png");
-const MAX_N_ENTITIES: usize = 1024;
-const MAX_N_SYSTEMS: usize = 1024;
-const Ecs = core.ecs.Ecs(MAX_N_ENTITIES, MAX_N_SYSTEMS, core.state.State, &[_]core.ecs.Component{
-    .{ "die", Die },
-    .{ "mesh", rl.Mesh },
-    .{ "material", rl.Material },
-    .{ "transform", rl.Matrix },
-    .{ "shape", zbt.Shape },
-    .{ "physics_interact", bool },
-    // .{ "mass", f32 },
-    // Body can be gotten by querying the physics engine
-    // Instead of storing the rigidbody, we store the index of the body in the physics engine
-    // .{ "rigidbody", zbt.Body },
-    .{ "body", i32 },
-});
-
-const SyncPhysicsSystem = Ecs.System(&[_]Ecs.ComponentsEnum{ .transform, .body }, struct {
-    fn sync(entities: []core.ecs.Entity, myecs: *Ecs, state: *core.state.State) void {
-        std.log.warn("IN SYNC SYSTEM\n", .{});
-        for (entities) |e| {
-            const idx = myecs.entities.manager.index_map.get(e).?;
-            const stored_transform = myecs.components.access(rl.Matrix, .transform, idx) orelse {
-                std.log.warn("Entity does not have transform component\n", .{});
-                continue;
-            };
-            const body_id = myecs.components.access(i32, .body, idx) orelse {
-                std.log.warn("Entity does not have body component\n", .{});
-                continue;
-            };
-            // std.log.warn("DRAWING: {}\n", .{e});
-
-            const body = state.physics.world.getBody(body_id.*);
-
-            var transform: [12]f32 = undefined;
-            body.getGraphicsWorldTransform(&transform);
-
-            stored_transform.*.m0 = transform[0];
-            stored_transform.*.m4 = transform[1];
-            stored_transform.*.m8 = transform[2];
-
-            stored_transform.*.m1 = transform[3];
-            stored_transform.*.m5 = transform[4];
-            stored_transform.*.m9 = transform[5];
-
-            stored_transform.*.m2 = transform[6];
-            stored_transform.*.m6 = transform[7];
-            stored_transform.*.m10 = transform[8];
-
-            stored_transform.*.m12 = transform[9];
-            stored_transform.*.m13 = transform[10];
-            stored_transform.*.m14 = transform[11];
-        }
-    }
-}.sync);
-
-const PlayerInteractSystem = Ecs.System(&[_]Ecs.ComponentsEnum{.physics_interact}, struct {
-    fn run(entities: []core.ecs.Entity, myecs: *Ecs, state: *core.state.State) void {
-        std.log.warn("IN PLAYER SYSTEM\n", .{});
-        for (entities) |e| {
-            const idx = myecs.entities.manager.index_map.get(e).?;
-
-            const interact = myecs.components.access(bool, .physics_interact, idx) orelse continue;
-            // const mesh = myecs.components.access(rl.Mesh, .mesh, idx).?;
-            // _ = mesh;
-
-            if (interact.* and rl.isMouseButtonPressed(rl.MouseButton.left)) {
-                const ray = rl.getScreenToWorldRay(rl.getMousePosition(), state.camera);
-
-                const ray_from = [3]f32{
-                    ray.position.x,
-                    ray.position.y,
-                    ray.position.z,
-                };
-
-                const ray_to = [3]f32{
-                    ray.position.x + ray.direction.x * 1000.0,
-                    ray.position.y + ray.direction.y * 1000.0,
-                    ray.position.z + ray.direction.z * 1000.0,
-                };
-
-                var result: zbt.RayCastResult = undefined;
-                const is_hit = state.physics.world.rayTestClosest(
-                    // zm.arr3Ptr(&mousepos),
-                    &ray_from,
-                    &ray_to,
-                    .{ .default = true },
-                    zbt.CollisionFilter.all,
-                    .{ .use_gjk_convex_test = true },
-                    &result,
-                );
-
-                if (is_hit) if (result.body) |b| {
-                    std.log.warn(
-                        \\ HIT!!!
-                    , .{});
-                    const impulse_strength: f32 = 20.0;
-
-                    const impulse = [3]f32{
-                        ray.direction.x * impulse_strength,
-                        ray.direction.y * impulse_strength,
-                        ray.direction.z * impulse_strength,
-                    };
-                    b.applyCentralImpulse(&impulse);
-                };
-            }
-        }
-    }
-}.run);
-
 /// Not **everything** has to be done in systems
 /// I have opted to use procedures for drawing logic
 /// This is because I would have to add complexity to systems to allow some run during drawing
 /// instead, I have opted to keep systems in the update loop
-pub fn draw(myecs: *Ecs, state: *core.state.State) void {
+pub fn draw(myecs: *Ecs, state: *game.state.State) void {
     rl.beginMode3D(state.camera);
     defer rl.endMode3D();
 
-    var all: [MAX_N_ENTITIES]core.ecs.Entity = undefined;
-    @memset(&all, 0);
     const phys_mesh_sig = s: {
         var s = Ecs.Signature.initEmpty();
         s.set(@intFromEnum(Ecs.ComponentsEnum.mesh));
@@ -165,7 +54,7 @@ pub fn draw(myecs: *Ecs, state: *core.state.State) void {
             // std.log.warn("DRAWING: {}\n", .{identifier});
             const idx = myecs.entities.manager.index_map.get(identifier) orelse std.debug.panic("Entity: {} Has no index?\n", .{identifier});
             const transform = myecs.components.access(rl.Matrix, Ecs.ComponentsEnum.transform, idx).?;
-            if (myecs.components.access(Die, .die, idx)) |die| {
+            if (myecs.components.access(game.Die, .die, idx)) |die| {
                 std.log.warn("drawing die\n", .{});
                 try die.draw(transform.*);
                 continue;
@@ -198,8 +87,8 @@ pub fn main() anyerror!void {
     // ECS Setup
     var ecs = Ecs.init(&arena);
     defer ecs.deinit();
-    try ecs.systems.register(SyncPhysicsSystem{});
-    try ecs.systems.register(PlayerInteractSystem{});
+    try ecs.systems.register(game.systems.SyncPhysicsSystem{});
+    try ecs.systems.register(game.systems.PlayerInteractSystem{});
 
     // World Setup
     //---
@@ -214,7 +103,7 @@ pub fn main() anyerror!void {
     physics_world.debugSetDrawer(&physics_debug.getDebugDraw());
     physics_world.debugSetMode(.{ .draw_wireframe = true, .draw_aabb = true });
 
-    var state = core.state.State{
+    var state = game.state.State{
         .window_height = screen_height,
         .window_width = screen_width,
         .camera = init_camera(),
@@ -256,7 +145,7 @@ pub fn main() anyerror!void {
             @panic("SHADER FAILED TO LOAD");
         }
         material.shader = shader;
-        const die = try Die.new(material, .six, .{ 1.0, 1.0, 1.0 });
+        const die = try game.Die.new(material, .six, .{ 1.0, 1.0, 1.0 });
         try handle.addComponent(Ecs.ComponentsEnum.die, &die);
 
         var transform = rl.Matrix.identity();
@@ -265,7 +154,7 @@ pub fn main() anyerror!void {
         try handle.addComponent(Ecs.ComponentsEnum.transform, &transform);
 
         const shape = boxshape.asShape();
-        const body = core.util.transformMassShapeToBody(transform, 1.0, shape);
+        const body = engine.util.transformMassShapeToBody(transform, 1.0, shape);
         const body_id = state.physics.world.getNumBodies();
         state.physics.world.addBody(body);
         try handle.addComponent(.body, &body_id);
@@ -293,7 +182,7 @@ pub fn main() anyerror!void {
         try handle.addComponent(.material, &material);
 
         const shape = floor_shape.asShape();
-        const body = core.util.transformMassShapeToBody(transform, 0.0, shape);
+        const body = engine.util.transformMassShapeToBody(transform, 0.0, shape);
         const body_id = state.physics.world.getNumBodies();
         state.physics.world.addBody(body);
         try handle.addComponent(.body, &body_id);
@@ -338,7 +227,7 @@ pub fn main() anyerror!void {
 
         // Convert spherical to cartesian
         const cube_entity_trans = ecs.components.access(rl.Matrix, .transform, cube_entity_idx) orelse @panic("NO CUBE??");
-        const target = core.util.extractPosition(cube_entity_trans.*);
+        const target = engine.util.extractPosition(cube_entity_trans.*);
         const new_camera_pos = Vector3.init(
             //
             target.x + distance * std.math.cos(pitch) * std.math.sin(yaw),

@@ -1,0 +1,99 @@
+const std = @import("std");
+const rl = @import("raylib");
+const zbt = @import("zbullet");
+const game = @import("root.zig");
+const Ecs = game.Ecs;
+const engine = @import("engine_core");
+
+pub const SyncPhysicsSystem = Ecs.System(&[_]Ecs.ComponentsEnum{ .transform, .body }, struct {
+    fn sync(entities: []engine.ecs.Entity, myecs: *Ecs, state: *game.state.State) void {
+        std.log.warn("IN SYNC SYSTEM\n", .{});
+        for (entities) |e| {
+            const idx = myecs.entities.manager.index_map.get(e).?;
+            const stored_transform = myecs.components.access(rl.Matrix, .transform, idx) orelse {
+                std.log.warn("Entity does not have transform component\n", .{});
+                continue;
+            };
+            const body_id = myecs.components.access(i32, .body, idx) orelse {
+                std.log.warn("Entity does not have body component\n", .{});
+                continue;
+            };
+            // std.log.warn("DRAWING: {}\n", .{e});
+
+            const body = state.physics.world.getBody(body_id.*);
+
+            var transform: [12]f32 = undefined;
+            body.getGraphicsWorldTransform(&transform);
+
+            stored_transform.*.m0 = transform[0];
+            stored_transform.*.m4 = transform[1];
+            stored_transform.*.m8 = transform[2];
+
+            stored_transform.*.m1 = transform[3];
+            stored_transform.*.m5 = transform[4];
+            stored_transform.*.m9 = transform[5];
+
+            stored_transform.*.m2 = transform[6];
+            stored_transform.*.m6 = transform[7];
+            stored_transform.*.m10 = transform[8];
+
+            stored_transform.*.m12 = transform[9];
+            stored_transform.*.m13 = transform[10];
+            stored_transform.*.m14 = transform[11];
+        }
+    }
+}.sync);
+
+pub const PlayerInteractSystem = Ecs.System(&[_]Ecs.ComponentsEnum{.physics_interact}, struct {
+    fn run(entities: []engine.ecs.Entity, myecs: *Ecs, state: *game.state.State) void {
+        std.log.warn("IN PLAYER SYSTEM\n", .{});
+        for (entities) |e| {
+            const idx = myecs.entities.manager.index_map.get(e).?;
+
+            const interact = myecs.components.access(bool, .physics_interact, idx) orelse continue;
+            // const mesh = myecs.components.access(rl.Mesh, .mesh, idx).?;
+            // _ = mesh;
+
+            if (interact.* and rl.isMouseButtonPressed(rl.MouseButton.left)) {
+                const ray = rl.getScreenToWorldRay(rl.getMousePosition(), state.camera);
+
+                const ray_from = [3]f32{
+                    ray.position.x,
+                    ray.position.y,
+                    ray.position.z,
+                };
+
+                const ray_to = [3]f32{
+                    ray.position.x + ray.direction.x * 1000.0,
+                    ray.position.y + ray.direction.y * 1000.0,
+                    ray.position.z + ray.direction.z * 1000.0,
+                };
+
+                var result: zbt.RayCastResult = undefined;
+                const is_hit = state.physics.world.rayTestClosest(
+                    // zm.arr3Ptr(&mousepos),
+                    &ray_from,
+                    &ray_to,
+                    .{ .default = true },
+                    zbt.CollisionFilter.all,
+                    .{ .use_gjk_convex_test = true },
+                    &result,
+                );
+
+                if (is_hit) if (result.body) |b| {
+                    std.log.warn(
+                        \\ HIT!!!
+                    , .{});
+                    const impulse_strength: f32 = 20.0;
+
+                    const impulse = [3]f32{
+                        ray.direction.x * impulse_strength,
+                        ray.direction.y * impulse_strength,
+                        ray.direction.z * impulse_strength,
+                    };
+                    b.applyCentralImpulse(&impulse);
+                };
+            }
+        }
+    }
+}.run);

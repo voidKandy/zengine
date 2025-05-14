@@ -16,10 +16,10 @@ pub fn build(b: *std.Build) void {
     const zbullet = b.dependency("zbullet", .{});
     const zmath = b.dependency("zmath", .{});
 
-    // Core Library
+    // Engine Library
     // ---
     const engine_core_lib = b.addModule("engine_core", .{
-        .root_source_file = b.path("src/root.zig"),
+        .root_source_file = b.path("engine/root.zig"),
     });
     engine_core_lib.addImport("zbullet", zbullet.module("root"));
     engine_core_lib.addImport("zmath", zmath.module("root"));
@@ -28,24 +28,56 @@ pub fn build(b: *std.Build) void {
     engine_core_lib.addImport("raylib", raylib);
     engine_core_lib.addImport("raygui", raygui);
 
-    const lib_unit_tests = b.addTest(.{
-        .root_source_file = b.path("src/root.zig"),
+    const engine_unit_tests = b.addTest(.{
+        .root_source_file = b.path("engine/root.zig"),
         .target = target,
         .optimize = optimize,
     });
 
     // lib_unit_tests.root_module.addImport("engine_core", engine_core_lib);
-    lib_unit_tests.root_module.addImport("zbullet", zbullet.module("root"));
-    lib_unit_tests.linkLibrary(zbullet.artifact("cbullet"));
-    lib_unit_tests.linkLibrary(raylib_artifact);
-    lib_unit_tests.root_module.addImport("raylib", raylib);
-    lib_unit_tests.root_module.addImport("zmath", zmath.module("root"));
-    lib_unit_tests.root_module.addImport("raygui", raygui);
+    engine_unit_tests.root_module.addImport("zbullet", zbullet.module("root"));
+    engine_unit_tests.linkLibrary(zbullet.artifact("cbullet"));
+    engine_unit_tests.linkLibrary(raylib_artifact);
+    engine_unit_tests.root_module.addImport("raylib", raylib);
+    engine_unit_tests.root_module.addImport("zmath", zmath.module("root"));
+    engine_unit_tests.root_module.addImport("raygui", raygui);
 
-    const run_lib_unit_tests = b.addRunArtifact(lib_unit_tests);
+    const run_engine_unit_tests = b.addRunArtifact(engine_unit_tests);
 
-    const test_step = b.step("test", "Run unit tests");
-    test_step.dependOn(&run_lib_unit_tests.step);
+    const engine_test_step = b.step("test_engine", "Run unit tests");
+    engine_test_step.dependOn(&run_engine_unit_tests.step);
+
+    // Game Library
+    // ---
+    const game_core_lib = b.addModule("game_core", .{
+        .root_source_file = b.path("game/root.zig"),
+    });
+    game_core_lib.addImport("engine_core", engine_core_lib);
+    game_core_lib.addImport("zbullet", zbullet.module("root"));
+    game_core_lib.addImport("zmath", zmath.module("root"));
+    game_core_lib.linkLibrary(zbullet.artifact("cbullet"));
+    game_core_lib.linkLibrary(raylib_artifact);
+    game_core_lib.addImport("raylib", raylib);
+    game_core_lib.addImport("raygui", raygui);
+
+    const game_unit_tests = b.addTest(.{
+        .root_source_file = b.path("game/root.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    // lib_unit_tests.root_module.addImport("engine_core", engine_core_lib);
+    game_unit_tests.root_module.addImport("zbullet", zbullet.module("root"));
+    game_unit_tests.linkLibrary(zbullet.artifact("cbullet"));
+    game_unit_tests.linkLibrary(raylib_artifact);
+    game_unit_tests.root_module.addImport("raylib", raylib);
+    game_unit_tests.root_module.addImport("zmath", zmath.module("root"));
+    game_unit_tests.root_module.addImport("raygui", raygui);
+
+    const run_game_unit_tests = b.addRunArtifact(game_unit_tests);
+
+    const game_test_step = b.step("test_game", "Run unit tests");
+    game_test_step.dependOn(&run_game_unit_tests.step);
 
     // Binaries
     // ---
@@ -68,6 +100,7 @@ pub fn build(b: *std.Build) void {
         const exe = b.addExecutable(.{ .name = name, .root_source_file = b.path(fullpath), .target = target, .optimize = optimize });
 
         exe.root_module.addImport("engine_core", engine_core_lib);
+        exe.root_module.addImport("game_core", game_core_lib);
         exe.root_module.addImport("zbullet", zbullet.module("root"));
         exe.linkLibrary(zbullet.artifact("cbullet"));
         exe.linkLibrary(raylib_artifact);

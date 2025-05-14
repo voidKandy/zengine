@@ -2,7 +2,7 @@ const rl = @import("raylib");
 const gl = rl.gl;
 const std = @import("std");
 const zbt = @import("zbullet");
-const core = @import("root.zig");
+const engine = @import("engine_core");
 const warn = std.log.warn;
 const Shape = zbt.Shape;
 const Allocator = std.mem.Allocator;
@@ -110,7 +110,7 @@ fn drawCubeWithTransformMatrix(texture: rl.Texture2D, transform: rl.Matrix, size
                 coords.vertex_coords[2],
             );
 
-            const vertex_coords = core.util.extractPosition(rl.Matrix.multiply(translation, transform));
+            const vertex_coords = engine.util.extractPosition(rl.Matrix.multiply(translation, transform));
 
             gl.rlTexCoord2f(
                 coords.tex_coords[0],

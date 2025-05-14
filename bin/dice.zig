@@ -1,7 +1,8 @@
 const rl = @import("raylib");
 const std = @import("std");
 const zbt = @import("zbullet");
-const core = @import("engine_core");
+const engine = @import("engine_core");
+const game = @import("game_core");
 const zm = @import("zmath");
 
 const Vector3 = rl.Vector3;
@@ -17,7 +18,7 @@ fn init_camera() rl.Camera3D {
     return camera;
 }
 
-const Die = core.dice.Die("resources/numbers.png");
+const Die = game.dice.Die("resources/numbers.png");
 
 pub fn main() !void {
     const screen_width = 800;

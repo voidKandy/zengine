@@ -4,8 +4,6 @@ const rl = @import("raylib");
 const std = @import("std");
 const zbt = @import("zbullet");
 
-// pub const EntityArray =
-//     core.da.DynamicArray(core.ecs.OldEntity, 5);
 pub const State = struct {
     window_height: f32,
     window_width: f32,
