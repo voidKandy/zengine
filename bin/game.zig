@@ -116,19 +116,18 @@ pub fn main() anyerror!void {
         },
     };
 
-    // should be in a function
     defer state.deinit();
 
-    const boxshape = zbt.initBoxShape(&[_]f32{ 1.0, 1.0, 1.0 });
-    defer boxshape.deinit();
+    const d6shape = zbt.initBoxShape(&[_]f32{ 1.0, 1.0, 1.0 });
+    defer d6shape.deinit();
 
-    var cube_entity_idx: usize = undefined;
+    var d6_entity_idx: usize = undefined;
 
-    // CUBE ENTITY
+    // D6 ENTITY
     // ---
     {
         var handle = try ecs.entities.register();
-        cube_entity_idx = handle.index() orelse @panic("NO INDEX??");
+        d6_entity_idx = handle.index() orelse @panic("NO INDEX??");
 
         var material = try rl.loadMaterialDefault();
         const shader = try rl.loadShader("resources/shaders/basic.vs", "resources/shaders/basic.fs");
@@ -144,7 +143,7 @@ pub fn main() anyerror!void {
         // We use the transform with the `Die` to store *where* it is
         try handle.addComponent(Ecs.ComponentsEnum.transform, &transform);
 
-        const shape = boxshape.asShape();
+        const shape = d6shape.asShape();
         const body = engine.util.transformMassShapeToBody(transform, 1.0, shape);
         const body_id = state.physics.world.getNumBodies();
         state.physics.world.addBody(body);
@@ -217,7 +216,7 @@ pub fn main() anyerror!void {
         if (distance > 50.0) distance = 50.0;
 
         // Convert spherical to cartesian
-        const cube_entity_trans = ecs.components.access(rl.Matrix, .transform, cube_entity_idx) orelse @panic("NO CUBE??");
+        const cube_entity_trans = ecs.components.access(rl.Matrix, .transform, d6_entity_idx) orelse @panic("NO CUBE??");
         const target = engine.util.extractPosition(cube_entity_trans.*);
         const new_camera_pos = Vector3.init(
             //
