@@ -18,7 +18,7 @@ pub const Ecs = engine.ecs.Ecs(MAX_N_ENTITIES, MAX_N_SYSTEMS, state.State, &[_]e
     .{ "transform", rl.Matrix },
     .{ "shape", zbt.Shape },
     // SHOULD ONLY BE ONE ENTITY
-    .{ "player_follow", bool },
+    .{ "camera_track", bool },
     // REMOVE THIS!!
     .{ "physics_interact", bool },
     // .{ "mass", f32 },

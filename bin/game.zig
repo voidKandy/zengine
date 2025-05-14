@@ -78,7 +78,7 @@ pub fn main() anyerror!void {
     // ECS Setup
     var ecs = Ecs.init(&arena);
     defer ecs.deinit();
-    try ecs.systems.register(game.systems.PlayerCameraSystem{});
+    try ecs.systems.register(game.systems.CameraTrackingSystem{});
     try ecs.systems.register(game.systems.SyncPhysicsSystem{});
     try ecs.systems.register(game.systems.PlayerInteractSystem{});
 
@@ -148,7 +148,7 @@ pub fn main() anyerror!void {
         const body_id = state.physics.world.getNumBodies();
         state.physics.world.addBody(body);
         try handle.addComponent(.body, &body_id);
-        try handle.addComponent(.player_follow, &true);
+        try handle.addComponent(.camera_track, &true);
 
         // try handle.addComponent(.physics_interact, &true);
     }

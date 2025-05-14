@@ -5,10 +5,7 @@ const game = @import("root.zig");
 const Ecs = game.Ecs;
 const engine = @import("engine_core");
 
-pub const PlayerCameraSystem = Ecs.System(&[_]Ecs.ComponentsEnum{ .player_follow, .transform }, struct {
-
-    // Variables for mouse orbit
-    // should be moved to system eventually
+pub const CameraTrackingSystem = Ecs.System(&[_]Ecs.ComponentsEnum{ .camera_track, .transform }, struct {
     const mouse_sensitivity: f32 = 0.005;
 
     fn run(entities: []engine.ecs.Entity, myecs: *Ecs, state: *game.state.State) void {
@@ -21,11 +18,7 @@ pub const PlayerCameraSystem = Ecs.System(&[_]Ecs.ComponentsEnum{ .player_follow
         const followed_entity = entities[0];
         const idx = myecs.entities.manager.index_map.get(followed_entity).?;
         const transform = myecs.components.access(rl.Matrix, .transform, idx) orelse @panic("NO TRANSFORM??");
-        // std.log.warn("DRAWING: {}\n", .{e});
 
-        // CAMERA TRACKING THE DICE
-        // dont love how this is done for now
-        // ---
         // Mouse control
         const mouse_delta = rl.getMouseDelta();
         yaw += mouse_delta.x * mouse_sensitivity;
