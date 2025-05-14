@@ -40,6 +40,21 @@ pub fn draw(myecs: *Ecs, state: *game.state.State) void {
         break :s s;
     };
 
+    if (state.object_impulse) |impulse| {
+        rl.drawCube(impulse.position, 0.5, 0.5, 0.5, rl.Color.ray_white);
+        rl.drawLine(
+            //
+            @as(i32, @intFromFloat(impulse.position.x)),
+            //
+            @as(i32, @intFromFloat(impulse.position.y)),
+            //
+            @as(i32, @intFromFloat(impulse.target.x)),
+            //
+            @as(i32, @intFromFloat(impulse.target.y)),
+            //
+            rl.Color.red);
+    }
+
     for (0.., myecs.entities.manager.signatures) |i, sig| {
         if (sig.supersetOf(phys_mesh_sig) or sig.supersetOf(die_sig)) {
             const identifier = myecs.entities.manager.identifier_map.get(i) orelse break;
@@ -80,7 +95,7 @@ pub fn main() anyerror!void {
     defer ecs.deinit();
     try ecs.systems.register(game.systems.CameraTrackingSystem{});
     try ecs.systems.register(game.systems.SyncPhysicsSystem{});
-    try ecs.systems.register(game.systems.PlayerInteractSystem{});
+    // try ecs.systems.register(game.systems.PlayerInteractSystem{});
 
     // World Setup
     //---
@@ -110,15 +125,7 @@ pub fn main() anyerror!void {
 
     defer state.deinit();
 
-    // Player Entity
-    // ---
-    // This is really just a transform that moves with the camera
-    // It is always *at* the position where a ray from the camera meets the
-    // object being followed by the player camera
-    // This is where an impulse is applied if the player so chooses
-    {}
-
-    const d6shape = zbt.initBoxShape(&[_]f32{ 1.0, 1.0, 1.0 });
+    const d6shape = zbt.initBoxShape(&[_]f32{ 2.0, 2.0, 2.0 });
     defer d6shape.deinit();
 
     var d6_entity_idx: usize = undefined;
@@ -201,9 +208,9 @@ pub fn main() anyerror!void {
         defer rl.endDrawing();
         rl.clearBackground(rl.Color.black);
 
+        draw(&ecs, &state);
         state.physics.world.debugDrawAll();
         state.physics.debug.lines.clearRetainingCapacity();
-        draw(&ecs, &state);
 
         rl.drawFPS(10, 10);
     }

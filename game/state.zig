@@ -10,6 +10,12 @@ pub const State = struct {
     // entities: EntityArray,
     // component_entites: core.ecs.OldEntity.Storage,
     camera: rl.Camera3D,
+    /// Corresponds with the `camera_track` component
+    /// Will change as the player rotates around the object
+    object_impulse: ?struct {
+        position: rl.Vector3,
+        target: rl.Vector3,
+    } = null,
     mouse: struct {
         cursor_pos: [2]f64 = .{ 0, 0 },
     } = .{},

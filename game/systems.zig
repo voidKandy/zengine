@@ -10,21 +10,15 @@ const Ecs = game.Ecs;
 /// Currently is failing to draw "hit point" because these systems DO NOT run at draw time
 /// Instead, I need to create another entity and flag it in a similar way to the `camera_track` and then
 /// *move* it. Then I can draw the impulse direction
+/// This poses an important *problem* with the way `System`s are implemented:
+/// I cannot reference entites with *different* signatures in a system
 pub const CameraTrackingSystem = Ecs.System(&[_]Ecs.ComponentsEnum{ .camera_track, .transform, .body }, struct {
     const mouse_sensitivity: f32 = 0.005;
+    var distance: f32 = 10.0;
+    var yaw: f32 = 0.0; // Horizontal angle (radians)
+    var pitch: f32 = 0.5; // Vertical angle (radians, avoid -PI/2 and PI/2)
 
-    fn run(entities: []engine.ecs.Entity, myecs: *Ecs, state: *game.state.State) void {
-        var distance: f32 = 10.0;
-        var yaw: f32 = 0.0; // Horizontal angle (radians)
-        var pitch: f32 = 0.5; // Vertical angle (radians, avoid -PI/2 and PI/2)
-
-        std.log.warn("IN SYNC SYSTEM\n", .{});
-        std.debug.assert(entities.len == 1);
-        const followed_entity = entities[0];
-        const idx = myecs.entities.manager.index_map.get(followed_entity).?;
-        const transform = myecs.components.access(rl.Matrix, .transform, idx) orelse @panic("NO TRANSFORM??");
-        const body = myecs.components.access(rl.Matrix, .body, idx) orelse @panic("NO BODY??");
-        _ = body;
+    fn orbitTransform(state: *game.state.State, transform: rl.Matrix) void {
 
         // Mouse control
         const mouse_delta = rl.getMouseDelta();
@@ -42,7 +36,7 @@ pub const CameraTrackingSystem = Ecs.System(&[_]Ecs.ComponentsEnum{ .camera_trac
         if (distance > 50.0) distance = 50.0;
 
         // Convert spherical to cartesian
-        const target = engine.util.extractPosition(transform.*);
+        const target = engine.util.extractPosition(transform);
         const new_camera_pos = rl.Vector3.init(
             //
             target.x + distance * std.math.cos(pitch) * std.math.sin(yaw),
@@ -52,8 +46,18 @@ pub const CameraTrackingSystem = Ecs.System(&[_]Ecs.ComponentsEnum{ .camera_trac
             target.z + distance * std.math.cos(pitch) * std.math.cos(yaw));
         state.camera.position = new_camera_pos;
         state.camera.target = target;
+    }
 
-        // Now we create the "hit point"
+    fn run(entities: []engine.ecs.Entity, myecs: *Ecs, state: *game.state.State) void {
+        std.log.warn("IN TRACKING SYSTEM\n", .{});
+        std.debug.assert(entities.len == 1);
+        const followed_entity = entities[0];
+        const idx = myecs.entities.manager.index_map.get(followed_entity).?;
+        const transform = myecs.components.access(rl.Matrix, .transform, idx) orelse @panic("NO TRANSFORM??");
+        const body = myecs.components.access(rl.Matrix, .body, idx) orelse @panic("NO BODY??");
+        _ = body;
+        orbitTransform(state, transform.*);
+
         const direction = rl.Vector3.normalize(rl.Vector3.subtract(state.camera.target, state.camera.position));
         const ray_from = [3]f32{
             state.camera.position.x,
@@ -61,7 +65,7 @@ pub const CameraTrackingSystem = Ecs.System(&[_]Ecs.ComponentsEnum{ .camera_trac
             state.camera.position.z,
         };
         const ray_to = arr: {
-            const vec = rl.Vector3.add(state.camera.position, rl.Vector3.scale(direction, 100.0));
+            const vec = rl.Vector3.add(state.camera.position, rl.Vector3.scale(direction, 10_000.0));
             break :arr [3]f32{
                 vec.x,
                 vec.y,
@@ -79,25 +83,19 @@ pub const CameraTrackingSystem = Ecs.System(&[_]Ecs.ComponentsEnum{ .camera_trac
             &result,
         );
 
-        // const mesh = rl.genMeshCube(50.0, 50.0, 50.0);
-        // var material = rl.loadMaterialDefault() catch @panic("could not load default material");
-        // material.maps[0].color = rl.Color.yellow;
-        if (is_hit) {
-            const hit_point = result.hit_point_world; // A `Vector3`
-            std.log.warn("HIT!!\n{any}\ninteract transform: {}", .{ hit_point, transform });
+        // const hitpoint_offset = rl.Vector3.init(-, y: f32, z: f32)
 
-            // Create and position a cube at the hit location
-            // const trans = rl.Matrix.translate(hit_point[0], hit_point[1], hit_point[2]);
-            // mesh.draw(material, trans);
-            rl.drawCube(rl.Vector3.init(
-                hit_point[0],
-                hit_point[1],
-                hit_point[2],
-            ), 0.5, 0.5, 0.5, rl.Color.yellow);
-            // const cube = myecs.spawn();
-            // ecs.components.set(cube, .transform, rl.MatrixTranslate(hit_point.x, hit_point.y, hit_point.z));
-            // ecs.components.set(cube, .mesh, somePreloadedCubeMesh);
-            // ecs.components.set(cube, .material, somePreloadedMaterial);
+        if (is_hit) {
+            const hit_point = rl.Vector3.init(
+                result.hit_point_world[0],
+                result.hit_point_world[1],
+                result.hit_point_world[2],
+            );
+
+            state.object_impulse = .{
+                .position = hit_point,
+                .target = rl.Vector3.add(hit_point, rl.Vector3.scale(direction, 100.0)),
+            };
         }
     }
 }.run);
@@ -160,10 +158,15 @@ pub const PlayerInteractSystem = Ecs.System(&[_]Ecs.ComponentsEnum{.physics_inte
                     ray.position.z,
                 };
 
+                // const ray_to = [3]f32{
+                //     ray.position.x + ray.direction.x * 1000.0,
+                //     ray.position.y + ray.direction.y * 1000.0,
+                //     ray.position.z + ray.direction.z * 1000.0,
+                // };
                 const ray_to = [3]f32{
-                    ray.position.x + ray.direction.x * 1000.0,
-                    ray.position.y + ray.direction.y * 1000.0,
-                    ray.position.z + ray.direction.z * 1000.0,
+                    // ray.position.x + ray.direction.x * 1000.0,
+                    // ray.position.y + ray.direction.y * 1000.0,
+                    // ray.position.z + ray.direction.z * 1000.0,
                 };
 
                 var result: zbt.RayCastResult = undefined;
