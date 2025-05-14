@@ -2,10 +2,15 @@ const std = @import("std");
 const rl = @import("raylib");
 const zbt = @import("zbullet");
 const game = @import("root.zig");
-const Ecs = game.Ecs;
 const engine = @import("engine_core");
+const Ecs = game.Ecs;
 
-pub const CameraTrackingSystem = Ecs.System(&[_]Ecs.ComponentsEnum{ .camera_track, .transform }, struct {
+/// Only a **single** entity can have the *camera_track* component at any given time
+/// otherwise the game will crash :)
+/// Currently is failing to draw "hit point" because these systems DO NOT run at draw time
+/// Instead, I need to create another entity and flag it in a similar way to the `camera_track` and then
+/// *move* it. Then I can draw the impulse direction
+pub const CameraTrackingSystem = Ecs.System(&[_]Ecs.ComponentsEnum{ .camera_track, .transform, .body }, struct {
     const mouse_sensitivity: f32 = 0.005;
 
     fn run(entities: []engine.ecs.Entity, myecs: *Ecs, state: *game.state.State) void {
@@ -18,6 +23,8 @@ pub const CameraTrackingSystem = Ecs.System(&[_]Ecs.ComponentsEnum{ .camera_trac
         const followed_entity = entities[0];
         const idx = myecs.entities.manager.index_map.get(followed_entity).?;
         const transform = myecs.components.access(rl.Matrix, .transform, idx) orelse @panic("NO TRANSFORM??");
+        const body = myecs.components.access(rl.Matrix, .body, idx) orelse @panic("NO BODY??");
+        _ = body;
 
         // Mouse control
         const mouse_delta = rl.getMouseDelta();
@@ -45,6 +52,53 @@ pub const CameraTrackingSystem = Ecs.System(&[_]Ecs.ComponentsEnum{ .camera_trac
             target.z + distance * std.math.cos(pitch) * std.math.cos(yaw));
         state.camera.position = new_camera_pos;
         state.camera.target = target;
+
+        // Now we create the "hit point"
+        const direction = rl.Vector3.normalize(rl.Vector3.subtract(state.camera.target, state.camera.position));
+        const ray_from = [3]f32{
+            state.camera.position.x,
+            state.camera.position.y,
+            state.camera.position.z,
+        };
+        const ray_to = arr: {
+            const vec = rl.Vector3.add(state.camera.position, rl.Vector3.scale(direction, 100.0));
+            break :arr [3]f32{
+                vec.x,
+                vec.y,
+                vec.z,
+            };
+        };
+        var result: zbt.RayCastResult = undefined;
+
+        const is_hit = state.physics.world.rayTestClosest(
+            &ray_from,
+            &ray_to,
+            .{ .default = true },
+            zbt.CollisionFilter.all,
+            .{ .use_gjk_convex_test = true },
+            &result,
+        );
+
+        // const mesh = rl.genMeshCube(50.0, 50.0, 50.0);
+        // var material = rl.loadMaterialDefault() catch @panic("could not load default material");
+        // material.maps[0].color = rl.Color.yellow;
+        if (is_hit) {
+            const hit_point = result.hit_point_world; // A `Vector3`
+            std.log.warn("HIT!!\n{any}\ninteract transform: {}", .{ hit_point, transform });
+
+            // Create and position a cube at the hit location
+            // const trans = rl.Matrix.translate(hit_point[0], hit_point[1], hit_point[2]);
+            // mesh.draw(material, trans);
+            rl.drawCube(rl.Vector3.init(
+                hit_point[0],
+                hit_point[1],
+                hit_point[2],
+            ), 0.5, 0.5, 0.5, rl.Color.yellow);
+            // const cube = myecs.spawn();
+            // ecs.components.set(cube, .transform, rl.MatrixTranslate(hit_point.x, hit_point.y, hit_point.z));
+            // ecs.components.set(cube, .mesh, somePreloadedCubeMesh);
+            // ecs.components.set(cube, .material, somePreloadedMaterial);
+        }
     }
 }.run);
 

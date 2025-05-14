@@ -19,6 +19,8 @@ pub const Ecs = engine.ecs.Ecs(MAX_N_ENTITIES, MAX_N_SYSTEMS, state.State, &[_]e
     .{ "shape", zbt.Shape },
     // SHOULD ONLY BE ONE ENTITY
     .{ "camera_track", bool },
+    // Should also only be one entity
+    // .{ "impulse_point", struct { position: rl.Vector3, direction: rl.Vector3 } },
     // REMOVE THIS!!
     .{ "physics_interact", bool },
     // .{ "mass", f32 },
