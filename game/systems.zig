@@ -5,8 +5,58 @@ const game = @import("root.zig");
 const Ecs = game.Ecs;
 const engine = @import("engine_core");
 
+pub const PlayerCameraSystem = Ecs.System(&[_]Ecs.ComponentsEnum{ .player_follow, .transform }, struct {
+
+    // Variables for mouse orbit
+    // should be moved to system eventually
+    const mouse_sensitivity: f32 = 0.005;
+
+    fn run(entities: []engine.ecs.Entity, myecs: *Ecs, state: *game.state.State) void {
+        var distance: f32 = 10.0;
+        var yaw: f32 = 0.0; // Horizontal angle (radians)
+        var pitch: f32 = 0.5; // Vertical angle (radians, avoid -PI/2 and PI/2)
+
+        std.log.warn("IN SYNC SYSTEM\n", .{});
+        std.debug.assert(entities.len == 1);
+        const followed_entity = entities[0];
+        const idx = myecs.entities.manager.index_map.get(followed_entity).?;
+        const transform = myecs.components.access(rl.Matrix, .transform, idx) orelse @panic("NO TRANSFORM??");
+        // std.log.warn("DRAWING: {}\n", .{e});
+
+        // CAMERA TRACKING THE DICE
+        // dont love how this is done for now
+        // ---
+        // Mouse control
+        const mouse_delta = rl.getMouseDelta();
+        yaw += mouse_delta.x * mouse_sensitivity;
+        pitch += mouse_delta.y * mouse_sensitivity;
+
+        // Clamp pitch to avoid flipping
+        const pitch_limit: f32 = std.math.pi / 2.0 - 0.01;
+        if (pitch > pitch_limit) pitch = pitch_limit;
+        if (pitch < -pitch_limit) pitch = -pitch_limit;
+
+        // Zoom with mouse wheel
+        distance -= rl.getMouseWheelMove() * 1.0;
+        if (distance < 2.0) distance = 2.0;
+        if (distance > 50.0) distance = 50.0;
+
+        // Convert spherical to cartesian
+        const target = engine.util.extractPosition(transform.*);
+        const new_camera_pos = rl.Vector3.init(
+            //
+            target.x + distance * std.math.cos(pitch) * std.math.sin(yaw),
+            //
+            target.y + distance * std.math.sin(pitch),
+            //
+            target.z + distance * std.math.cos(pitch) * std.math.cos(yaw));
+        state.camera.position = new_camera_pos;
+        state.camera.target = target;
+    }
+}.run);
+
 pub const SyncPhysicsSystem = Ecs.System(&[_]Ecs.ComponentsEnum{ .transform, .body }, struct {
-    fn sync(entities: []engine.ecs.Entity, myecs: *Ecs, state: *game.state.State) void {
+    fn run(entities: []engine.ecs.Entity, myecs: *Ecs, state: *game.state.State) void {
         std.log.warn("IN SYNC SYSTEM\n", .{});
         for (entities) |e| {
             const idx = myecs.entities.manager.index_map.get(e).?;
@@ -42,7 +92,7 @@ pub const SyncPhysicsSystem = Ecs.System(&[_]Ecs.ComponentsEnum{ .transform, .bo
             stored_transform.*.m14 = transform[11];
         }
     }
-}.sync);
+}.run);
 
 pub const PlayerInteractSystem = Ecs.System(&[_]Ecs.ComponentsEnum{.physics_interact}, struct {
     fn run(entities: []engine.ecs.Entity, myecs: *Ecs, state: *game.state.State) void {

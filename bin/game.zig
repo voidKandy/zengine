@@ -20,8 +20,8 @@ fn init_camera() rl.Camera3D {
 
 /// Not **everything** has to be done in systems
 /// I have opted to use procedures for drawing logic
-/// This is because I would have to add complexity to systems to allow some run during drawing
-/// instead, I have opted to keep systems in the update loop
+/// This is because I would have to add complexity to systems to allow some to run during drawing
+/// instead, I have opted to keep systems in *just* the update loop
 pub fn draw(myecs: *Ecs, state: *game.state.State) void {
     rl.beginMode3D(state.camera);
     defer rl.endMode3D();
@@ -40,18 +40,9 @@ pub fn draw(myecs: *Ecs, state: *game.state.State) void {
         break :s s;
     };
 
-    // std.log.warn(
-    //     \\ PhysMesh Sig: {b}
-    //     \\ die Sig: {b}
-    // , .{ phys_mesh_sig.mask, die_sig.mask });
-
     for (0.., myecs.entities.manager.signatures) |i, sig| {
-        // std.log.warn("SIG: {b}\n", .{sig.mask});
-
         if (sig.supersetOf(phys_mesh_sig) or sig.supersetOf(die_sig)) {
-            // std.log.warn("IDX: {}\n", .{i});
             const identifier = myecs.entities.manager.identifier_map.get(i) orelse break;
-            // std.log.warn("DRAWING: {}\n", .{identifier});
             const idx = myecs.entities.manager.index_map.get(identifier) orelse std.debug.panic("Entity: {} Has no index?\n", .{identifier});
             const transform = myecs.components.access(rl.Matrix, Ecs.ComponentsEnum.transform, idx).?;
             if (myecs.components.access(game.Die, .die, idx)) |die| {
@@ -87,6 +78,7 @@ pub fn main() anyerror!void {
     // ECS Setup
     var ecs = Ecs.init(&arena);
     defer ecs.deinit();
+    try ecs.systems.register(game.systems.PlayerCameraSystem{});
     try ecs.systems.register(game.systems.SyncPhysicsSystem{});
     try ecs.systems.register(game.systems.PlayerInteractSystem{});
 
@@ -118,6 +110,14 @@ pub fn main() anyerror!void {
 
     defer state.deinit();
 
+    // Player Entity
+    // ---
+    // This is really just a transform that moves with the camera
+    // It is always *at* the position where a ray from the camera meets the
+    // object being followed by the player camera
+    // This is where an impulse is applied if the player so chooses
+    {}
+
     const d6shape = zbt.initBoxShape(&[_]f32{ 1.0, 1.0, 1.0 });
     defer d6shape.deinit();
 
@@ -148,8 +148,9 @@ pub fn main() anyerror!void {
         const body_id = state.physics.world.getNumBodies();
         state.physics.world.addBody(body);
         try handle.addComponent(.body, &body_id);
+        try handle.addComponent(.player_follow, &true);
 
-        try handle.addComponent(.physics_interact, &true);
+        // try handle.addComponent(.physics_interact, &true);
     }
 
     // FLOOR ENTITY
@@ -178,13 +179,6 @@ pub fn main() anyerror!void {
         try handle.addComponent(.body, &body_id);
     }
 
-    // Variables for mouse orbit
-    // should be moved to system eventually
-    const mouse_sensitivity: f32 = 0.005;
-    var distance: f32 = 10.0;
-    var yaw: f32 = 0.0; // Horizontal angle (radians)
-    var pitch: f32 = 0.5; // Vertical angle (radians, avoid -PI/2 and PI/2)
-
     // Variables for mouse click
     // should also be moved to system eventually
 
@@ -196,37 +190,6 @@ pub fn main() anyerror!void {
         const dt = rl.getFrameTime();
         _ = state.physics.world.stepSimulation(dt, .{});
         try ecs.runSystems(&state);
-
-        // CAMERA TRACKING THE DICE
-        // dont love how this is done for now
-        // ---
-        // Mouse control
-        const mouse_delta = rl.getMouseDelta();
-        yaw += mouse_delta.x * mouse_sensitivity;
-        pitch += mouse_delta.y * mouse_sensitivity;
-
-        // Clamp pitch to avoid flipping
-        const pitch_limit: f32 = std.math.pi / 2.0 - 0.01;
-        if (pitch > pitch_limit) pitch = pitch_limit;
-        if (pitch < -pitch_limit) pitch = -pitch_limit;
-
-        // Zoom with mouse wheel
-        distance -= rl.getMouseWheelMove() * 1.0;
-        if (distance < 2.0) distance = 2.0;
-        if (distance > 50.0) distance = 50.0;
-
-        // Convert spherical to cartesian
-        const cube_entity_trans = ecs.components.access(rl.Matrix, .transform, d6_entity_idx) orelse @panic("NO CUBE??");
-        const target = engine.util.extractPosition(cube_entity_trans.*);
-        const new_camera_pos = Vector3.init(
-            //
-            target.x + distance * std.math.cos(pitch) * std.math.sin(yaw),
-            //
-            target.y + distance * std.math.sin(pitch),
-            //
-            target.z + distance * std.math.cos(pitch) * std.math.cos(yaw));
-        state.camera.position = new_camera_pos;
-        state.camera.target = target;
 
         // Impulse
         // ---

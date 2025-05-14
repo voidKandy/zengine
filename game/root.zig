@@ -17,6 +17,9 @@ pub const Ecs = engine.ecs.Ecs(MAX_N_ENTITIES, MAX_N_SYSTEMS, state.State, &[_]e
     .{ "material", rl.Material },
     .{ "transform", rl.Matrix },
     .{ "shape", zbt.Shape },
+    // SHOULD ONLY BE ONE ENTITY
+    .{ "player_follow", bool },
+    // REMOVE THIS!!
     .{ "physics_interact", bool },
     // .{ "mass", f32 },
     // Body can be gotten by querying the physics engine
