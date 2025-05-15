@@ -19,32 +19,47 @@ pub const CameraTrackingSystem = Ecs.System(&[_]Ecs.ComponentsEnum{ .camera_trac
     var pitch: f32 = 0.5; // Vertical angle (radians, avoid -PI/2 and PI/2)
 
     fn orbitTransform(state: *game.state.State, transform: rl.Matrix) void {
-
-        // Mouse control
         const mouse_delta = rl.getMouseDelta();
         yaw += mouse_delta.x * mouse_sensitivity;
         pitch += mouse_delta.y * mouse_sensitivity;
 
-        // Clamp pitch to avoid flipping
+        // Clamp pitch to avoid flipping over the top
         const pitch_limit: f32 = std.math.pi / 2.0 - 0.01;
-        if (pitch > pitch_limit) pitch = pitch_limit;
-        if (pitch < -pitch_limit) pitch = -pitch_limit;
+        pitch = std.math.clamp(pitch, -pitch_limit, pitch_limit);
 
         // Zoom with mouse wheel
         distance -= rl.getMouseWheelMove() * 1.0;
-        if (distance < 2.0) distance = 2.0;
-        if (distance > 50.0) distance = 50.0;
+        distance = std.math.clamp(distance, 2.0, 50.0);
 
-        // Convert spherical to cartesian
+        // Get the target position from the object's transform
         const target = engine.util.extractPosition(transform);
-        const new_camera_pos = rl.Vector3.init(
-            //
-            target.x + distance * std.math.cos(pitch) * std.math.sin(yaw),
-            //
-            target.y + distance * std.math.sin(pitch),
-            //
-            target.z + distance * std.math.cos(pitch) * std.math.cos(yaw));
-        state.camera.position = new_camera_pos;
+
+        // Spherical to Cartesian conversion
+        const sin_pitch = std.math.sin(pitch);
+        const cos_pitch = std.math.cos(pitch);
+        const sin_yaw = std.math.sin(yaw);
+        const cos_yaw = std.math.cos(yaw);
+
+        // Calculate raw camera position
+        var camera_pos = rl.Vector3{
+            .x = target.x + distance * cos_pitch * sin_yaw,
+            .y = target.y + distance * sin_pitch,
+            .z = target.z + distance * cos_pitch * cos_yaw,
+        };
+
+        // --- Prevent going *under* the object ---
+        // If camera would end up lower than the target, clamp it
+        if (camera_pos.y < target.y) {
+            camera_pos.y = target.y;
+
+            // Recalculate horizontal distance based on new vertical clamp
+            const horizontal_distance = std.math.sqrt(distance * distance - (camera_pos.y - target.y) * (camera_pos.y - target.y));
+
+            camera_pos.x = target.x + horizontal_distance * sin_yaw;
+            camera_pos.z = target.z + horizontal_distance * cos_yaw;
+        }
+
+        state.camera.position = camera_pos;
         state.camera.target = target;
     }
 
@@ -54,48 +69,93 @@ pub const CameraTrackingSystem = Ecs.System(&[_]Ecs.ComponentsEnum{ .camera_trac
         const followed_entity = entities[0];
         const idx = myecs.entities.manager.index_map.get(followed_entity).?;
         const transform = myecs.components.access(rl.Matrix, .transform, idx) orelse @panic("NO TRANSFORM??");
-        const body = myecs.components.access(rl.Matrix, .body, idx) orelse @panic("NO BODY??");
-        _ = body;
+        const body_id = myecs.components.access(i32, .body, idx) orelse @panic("NO BODY??");
         orbitTransform(state, transform.*);
 
-        const direction = rl.Vector3.normalize(rl.Vector3.subtract(state.camera.target, state.camera.position));
-        const ray_from = [3]f32{
-            state.camera.position.x,
-            state.camera.position.y,
-            state.camera.position.z,
-        };
-        const ray_to = arr: {
-            const vec = rl.Vector3.add(state.camera.position, rl.Vector3.scale(direction, 10_000.0));
-            break :arr [3]f32{
-                vec.x,
-                vec.y,
-                vec.z,
+        if (rl.isMouseButtonPressed(.left)) {
+            const direction = rl.Vector3.normalize(rl.Vector3.subtract(state.camera.target, state.camera.position));
+            std.log.warn(
+                \\ RAYCASTING
+                \\
+            , .{});
+            const ray_from = [3]f32{
+                state.camera.position.x,
+                state.camera.position.y,
+                state.camera.position.z,
             };
-        };
-        var result: zbt.RayCastResult = undefined;
+            const ray_to = arr: {
+                const vec = rl.Vector3.add(state.camera.position, rl.Vector3.scale(direction, 10_000.0));
+                break :arr [3]f32{
+                    vec.x,
+                    vec.y,
+                    vec.z,
+                };
+            };
+            var result: zbt.RayCastResult = undefined;
 
-        const is_hit = state.physics.world.rayTestClosest(
-            &ray_from,
-            &ray_to,
-            .{ .default = true },
-            zbt.CollisionFilter.all,
-            .{ .use_gjk_convex_test = true },
-            &result,
-        );
-
-        // const hitpoint_offset = rl.Vector3.init(-, y: f32, z: f32)
-
-        if (is_hit) {
-            const hit_point = rl.Vector3.init(
-                result.hit_point_world[0],
-                result.hit_point_world[1],
-                result.hit_point_world[2],
+            const is_hit = state.physics.world.rayTestClosest(
+                &ray_from,
+                &ray_to,
+                .{ .default = true },
+                zbt.CollisionFilter.all,
+                .{ .use_gjk_convex_test = true },
+                &result,
             );
 
-            state.object_impulse = .{
-                .position = hit_point,
-                .target = rl.Vector3.add(hit_point, rl.Vector3.scale(direction, 100.0)),
-            };
+            if (is_hit) {
+                const hit_point = rl.Vector3.init(
+                    result.hit_point_world[0],
+                    result.hit_point_world[1],
+                    result.hit_point_world[2],
+                );
+
+                state.object_impulse = .{
+                    .position = hit_point,
+                    .target = rl.Vector3.add(hit_point, rl.Vector3.scale(direction, 100.0)),
+                };
+            }
+        }
+
+        if (rl.isKeyPressed(.p)) {
+            if (state.object_impulse) |impulse| {
+                const direction = rl.Vector3.normalize(rl.Vector3.subtract(impulse.target, impulse.position));
+                // _ = body;
+                // state.object_impulse = null;
+                const body = state.physics.world.getBody(body_id.*);
+                std.log.warn(
+                    \\ APPLYING IMPULSE !!
+                    \\
+                    \\ BODY IS ACTIVE [{}]
+                , .{body.isActive()});
+
+                // const imp = [3]f32{ 0.0, 500.0, 0.0 };
+
+                if (!body.isActive()) {
+                    body.setActivationState(.active);
+                }
+
+                // Step 3: Scale to get desired impulse magnitude
+                const force_magnitude: f32 = 10.0;
+                const imp = [3]f32{
+                    direction.x * force_magnitude,
+                    direction.y * force_magnitude,
+                    direction.z * force_magnitude,
+                };
+
+                // const imp =
+                //     [3]f32{
+                //         direction.x * 100.0,
+                //         direction.y * 100.0,
+                //         direction.z * 100.0,
+                //             // impulse.position.x * 80.0,
+                //             // impulse.position.y * 80.0,
+                //             // impulse.position.z * 80.0,
+                //     };
+
+                // body.setActivationState(.active);
+                body.applyCentralImpulse(&imp);
+                // body.applyBodyTorque(&imp);
+            }
         }
     }
 }.run);

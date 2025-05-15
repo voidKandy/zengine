@@ -41,18 +41,8 @@ pub fn draw(myecs: *Ecs, state: *game.state.State) void {
     };
 
     if (state.object_impulse) |impulse| {
-        rl.drawCube(impulse.position, 0.5, 0.5, 0.5, rl.Color.ray_white);
-        rl.drawLine(
-            //
-            @as(i32, @intFromFloat(impulse.position.x)),
-            //
-            @as(i32, @intFromFloat(impulse.position.y)),
-            //
-            @as(i32, @intFromFloat(impulse.target.x)),
-            //
-            @as(i32, @intFromFloat(impulse.target.y)),
-            //
-            rl.Color.red);
+        rl.drawCube(impulse.position, 0.1, 0.1, 0.1, rl.Color.ray_white);
+        rl.drawLine3D(impulse.position, impulse.target, rl.Color.red);
     }
 
     for (0.., myecs.entities.manager.signatures) |i, sig| {
@@ -125,7 +115,8 @@ pub fn main() anyerror!void {
 
     defer state.deinit();
 
-    const d6shape = zbt.initBoxShape(&[_]f32{ 2.0, 2.0, 2.0 });
+    // I believe this shape needs to be *half* the size of the mesh??
+    const d6shape = zbt.initBoxShape(&[_]f32{ 0.5, 0.5, 0.5 });
     defer d6shape.deinit();
 
     var d6_entity_idx: usize = undefined;
@@ -145,8 +136,7 @@ pub fn main() anyerror!void {
         const die = try game.Die.new(material, .six, .{ 1.0, 1.0, 1.0 });
         try handle.addComponent(Ecs.ComponentsEnum.die, &die);
 
-        var transform = rl.Matrix.identity();
-        transform = transform.multiply(rl.Matrix.translate(0.0, 10.0, 0.0));
+        const transform = rl.Matrix.multiply(rl.Matrix.identity(), rl.Matrix.translate(0.0, 10.0, 0.0));
         // We use the transform with the `Die` to store *where* it is
         try handle.addComponent(Ecs.ComponentsEnum.transform, &transform);
 
@@ -162,7 +152,7 @@ pub fn main() anyerror!void {
 
     // FLOOR ENTITY
     // ---
-    const floor_shape = zbt.initBoxShape(&[_]f32{ 10.0, 0.1, 10.0 });
+    const floor_shape = zbt.initBoxShape(&[_]f32{ 5.0, 0.1, 5.0 });
 
     defer floor_shape.deinit();
     {
@@ -172,7 +162,7 @@ pub fn main() anyerror!void {
             rl.genMeshPlane(10.0, 10.0, 1, 1);
         try handle.addComponent(.mesh, &mesh);
 
-        const transform = rl.Matrix.identity();
+        const transform = rl.Matrix.multiply(rl.Matrix.identity(), rl.Matrix.translate(0.0, -10.0, 0.0));
         try handle.addComponent(.transform, &transform);
 
         var material = try rl.loadMaterialDefault();
@@ -212,6 +202,9 @@ pub fn main() anyerror!void {
         state.physics.world.debugDrawAll();
         state.physics.debug.lines.clearRetainingCapacity();
 
+        if (state.object_impulse) |_| {
+            rl.drawText("Press [SPACE] to push the object", 50, 50, 10, rl.Color.green);
+        }
         rl.drawFPS(10, 10);
     }
 }
