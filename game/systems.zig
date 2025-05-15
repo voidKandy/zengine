@@ -74,10 +74,6 @@ pub const CameraTrackingSystem = Ecs.System(&[_]Ecs.ComponentsEnum{ .camera_trac
 
         if (rl.isMouseButtonPressed(.left)) {
             const direction = rl.Vector3.normalize(rl.Vector3.subtract(state.camera.target, state.camera.position));
-            std.log.warn(
-                \\ RAYCASTING
-                \\
-            , .{});
             const ray_from = [3]f32{
                 state.camera.position.x,
                 state.camera.position.y,
@@ -98,7 +94,10 @@ pub const CameraTrackingSystem = Ecs.System(&[_]Ecs.ComponentsEnum{ .camera_trac
                 &ray_to,
                 .{ .default = true },
                 zbt.CollisionFilter.all,
-                .{ .use_gjk_convex_test = true },
+                .{
+                    // .trimesh_skip_backfaces = true,
+                    .use_gjk_convex_test = true,
+                },
                 &result,
             );
 
@@ -109,9 +108,21 @@ pub const CameraTrackingSystem = Ecs.System(&[_]Ecs.ComponentsEnum{ .camera_trac
                     result.hit_point_world[2],
                 );
 
+                const flipped_hit_point = rl.Vector3.init(hit_point.x, // keep X
+                    2.0 * transform.m13 - hit_point.y, // flip Y
+                    hit_point.z // keep Z
+                );
+
+                const flipped_target = rl.Vector3.init(
+                    ray_to[0],
+                    2.0 * transform.m13 - ray_to[1],
+                    ray_to[2],
+                );
+
+                const dir = rl.Vector3.normalize(rl.Vector3.subtract(flipped_target, flipped_hit_point));
                 state.object_impulse = .{
-                    .position = hit_point,
-                    .target = rl.Vector3.add(hit_point, rl.Vector3.scale(direction, 100.0)),
+                    .position = flipped_hit_point,
+                    .target = rl.Vector3.add(flipped_hit_point, rl.Vector3.scale(dir, 100.0)),
                 };
             }
         }
@@ -135,7 +146,7 @@ pub const CameraTrackingSystem = Ecs.System(&[_]Ecs.ComponentsEnum{ .camera_trac
                 }
 
                 // Step 3: Scale to get desired impulse magnitude
-                const force_magnitude: f32 = 10.0;
+                const force_magnitude: f32 = 100.0;
                 const imp = [3]f32{
                     direction.x * force_magnitude,
                     direction.y * force_magnitude,

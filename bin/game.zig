@@ -22,7 +22,7 @@ fn init_camera() rl.Camera3D {
 /// I have opted to use procedures for drawing logic
 /// This is because I would have to add complexity to systems to allow some to run during drawing
 /// instead, I have opted to keep systems in *just* the update loop
-pub fn draw(myecs: *Ecs, state: *game.state.State) void {
+fn draw(myecs: *Ecs, state: *game.state.State) void {
     rl.beginMode3D(state.camera);
     defer rl.endMode3D();
 
@@ -61,6 +61,81 @@ pub fn draw(myecs: *Ecs, state: *game.state.State) void {
             rl.drawMesh(mesh.*, material.*, transform.*);
         }
     }
+
+    rl.drawGrid(10, 10.0);
+}
+
+fn createRoom(ecs: *Ecs, state: *game.state.State, size: f32) !struct {
+    floor_shape: zbt.Shape,
+    wall_shape: zbt.Shape,
+} {
+    const half_size = size / 2.0;
+    const floor_shape = zbt.initBoxShape(&[_]f32{ half_size, 0.1, half_size });
+    const wall_shape = zbt.initBoxShape(&[_]f32{ half_size, half_size, 0.1 });
+    // FLOOR
+    {
+        var handle = try ecs.entities.register();
+
+        const mesh =
+            rl.genMeshPlane(size, size, 1, 1);
+
+        try handle.addComponent(.mesh, &mesh);
+
+        const transform = rl.Matrix.multiply(rl.Matrix.identity(), rl.Matrix.translate(0.0, -size, 0.0));
+        try handle.addComponent(.transform, &transform);
+
+        var material = try rl.loadMaterialDefault();
+        material.maps[@as(usize, @intFromEnum(rl.MATERIAL_MAP_DIFFUSE))].color = rl.Color.dark_green;
+        try handle.addComponent(.material, &material);
+
+        const shape = floor_shape.asShape();
+        const body = engine.util.transformMassShapeToBody(transform, 0.0, shape);
+        const body_id = state.physics.world.getNumBodies();
+        state.physics.world.addBody(body);
+        try handle.addComponent(.body, &body_id);
+    }
+
+    // WALLS
+    const wall_positions_rotations = [_]struct { rl.Vector3, rl.Matrix }{ .{
+        rl.Vector3.init(0.0, -half_size, -half_size),
+        rl.Matrix.identity(),
+    }, .{
+        rl.Vector3.init(0.0, -half_size, half_size),
+        rl.Matrix.rotateY(std.math.pi),
+    }, .{
+        rl.Vector3.init(-half_size, -half_size, 0.0),
+        rl.Matrix.rotateY(-std.math.pi / 2.0),
+    }, .{
+        rl.Vector3.init(half_size, -half_size, 0.0),
+        rl.Matrix.rotateY(std.math.pi / 2.0),
+    } };
+
+    for (wall_positions_rotations) |pos_rot| {
+        const pos, const rot = pos_rot;
+        var handle = try ecs.entities.register();
+
+        const mesh = rl.genMeshCube(size, size, 0.1);
+        try handle.addComponent(.mesh, &mesh);
+
+        const transform = rl.Matrix.multiply(rot, rl.Matrix.translate(
+            pos.x,
+            pos.y,
+            pos.z,
+        ));
+        try handle.addComponent(.transform, &transform);
+
+        var material = try rl.loadMaterialDefault();
+        material.maps[@as(usize, @intFromEnum(rl.MATERIAL_MAP_DIFFUSE))].color = rl.Color.dark_gray;
+        try handle.addComponent(.material, &material);
+
+        const shape = wall_shape.asShape();
+        const body = engine.util.transformMassShapeToBody(transform, 0.0, shape);
+        const body_id = state.physics.world.getNumBodies();
+        state.physics.world.addBody(body);
+        try handle.addComponent(.body, &body_id);
+    }
+
+    return .{ .floor_shape = floor_shape.asShape(), .wall_shape = wall_shape.asShape() };
 }
 
 pub fn main() anyerror!void {
@@ -74,8 +149,8 @@ pub fn main() anyerror!void {
     }
     std.log.warn("INITIALIZED ALLOCATOR\n", .{});
 
-    const screen_width = 800;
-    const screen_height = 450;
+    const screen_width = 1600;
+    const screen_height = 900;
     rl.initWindow(screen_width, screen_height, "raylib-zig [core] example - basic window");
     defer rl.closeWindow(); // Close window and OpenGL context
     rl.setTargetFPS(60); // Set our game to run at 60 frames-per-second
@@ -150,36 +225,12 @@ pub fn main() anyerror!void {
         // try handle.addComponent(.physics_interact, &true);
     }
 
-    // FLOOR ENTITY
-    // ---
-    const floor_shape = zbt.initBoxShape(&[_]f32{ 5.0, 0.1, 5.0 });
-
-    defer floor_shape.deinit();
-    {
-        var handle = try ecs.entities.register();
-
-        const mesh =
-            rl.genMeshPlane(10.0, 10.0, 1, 1);
-        try handle.addComponent(.mesh, &mesh);
-
-        const transform = rl.Matrix.multiply(rl.Matrix.identity(), rl.Matrix.translate(0.0, -10.0, 0.0));
-        try handle.addComponent(.transform, &transform);
-
-        var material = try rl.loadMaterialDefault();
-        material.maps[@as(usize, @intFromEnum(rl.MATERIAL_MAP_DIFFUSE))].color = rl.Color.dark_green;
-        try handle.addComponent(.material, &material);
-
-        const shape = floor_shape.asShape();
-        const body = engine.util.transformMassShapeToBody(transform, 0.0, shape);
-        const body_id = state.physics.world.getNumBodies();
-        state.physics.world.addBody(body);
-        try handle.addComponent(.body, &body_id);
+    const room_shapes = try createRoom(&ecs, &state, 50.0);
+    defer {
+        room_shapes.floor_shape.deinit();
+        room_shapes.wall_shape.deinit();
     }
 
-    // Variables for mouse click
-    // should also be moved to system eventually
-
-    // var ray = zbt.RayCastFlags
     // Main game loop
     while (!rl.windowShouldClose()) {
         // Update
