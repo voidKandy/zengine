@@ -16,9 +16,8 @@ pub const State = struct {
         position: rl.Vector3,
         target: rl.Vector3,
     } = null,
-    mouse: struct {
-        cursor_pos: [2]f64 = .{ 0, 0 },
-    } = .{},
+    /// Maybe this is *BAD*?
+    upward_face: ?u32 = null,
     physics: struct {
         world: zbt.World,
         debug: *zbt.DebugDrawer,

@@ -64,11 +64,6 @@ pub const CameraTrackingSystem = Ecs.System(&[_]Ecs.ComponentsEnum{ .camera_trac
     }
 
     fn run(entities: []engine.ecs.Entity, myecs: *Ecs, state: *game.state.State) void {
-        var prng = std.Random.DefaultPrng.init(blk: {
-            var seed: u64 = undefined;
-            std.posix.getrandom(std.mem.asBytes(&seed)) catch @panic("PROBLEM WITH RANDOM SEED");
-            break :blk seed;
-        });
         std.log.warn("IN TRACKING SYSTEM\n", .{});
         std.debug.assert(entities.len == 1);
         const followed_entity = entities[0];
@@ -79,6 +74,8 @@ pub const CameraTrackingSystem = Ecs.System(&[_]Ecs.ComponentsEnum{ .camera_trac
         const body = state.physics.world.getBody(body_id.*);
 
         if (!body.isActive()) {
+            const face_up = game.dice.DieType.whichFaceUp(transform.*);
+            state.upward_face = face_up;
             const direction = rl.Vector3.normalize(rl.Vector3.subtract(state.camera.target, state.camera.position));
             const ray_from = [3]f32{
                 state.camera.position.x,
@@ -144,12 +141,13 @@ pub const CameraTrackingSystem = Ecs.System(&[_]Ecs.ComponentsEnum{ .camera_trac
                     impulse_dir.z * force_magnitude,
                 };
 
-                const rand = prng.random();
+                const cross_prod = impulse_dir.crossProduct(impulse.position);
+                const torque_power: f32 = 50.0;
 
                 const torque = [3]f32{
-                    (rand.float(f32) - 0.5) * 10.0,
-                    (rand.float(f32) - 0.5) * 10.0,
-                    (rand.float(f32) - 0.5) * 10.0,
+                    cross_prod.x * torque_power,
+                    cross_prod.y * torque_power,
+                    cross_prod.z * torque_power,
                 };
 
                 if (!body.isActive()) {

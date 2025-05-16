@@ -230,6 +230,7 @@ pub fn main() anyerror!void {
         const body = engine.util.transformMassShapeToBody(transform, mass, shape);
         body.setFriction(5.0);
         body.setSpinningFriction(5.0);
+        body.setDeactivationTime(2.0);
         // Higher value = more bounce
         body.setRestitution(0.5);
 
@@ -259,6 +260,7 @@ pub fn main() anyerror!void {
         // Update
         //----------------------------------------------------------------------------------
         const dt = rl.getFrameTime();
+        // _ = dt;
         _ = state.physics.world.stepSimulation(dt, .{});
         try ecs.runSystems(&state);
 
@@ -277,7 +279,12 @@ pub fn main() anyerror!void {
         state.physics.debug.lines.clearRetainingCapacity();
 
         if (state.object_impulse) |_| {
-            rl.drawText("Press [SPACE] to push the object", 50, 50, 10, rl.Color.green);
+            rl.drawText("Press [P] to push the object", 50, 50, 10, rl.Color.green);
+        }
+        if (state.upward_face) |face| {
+            const text = try std.fmt.allocPrintZ(arena.allocator(), "Upward face: {}", .{face});
+
+            rl.drawText(text, 100, 100, 10, rl.Color.green);
         }
         rl.drawFPS(10, 10);
     }

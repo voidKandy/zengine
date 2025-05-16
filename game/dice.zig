@@ -29,6 +29,43 @@ pub const DieType =
                 },
             }
         }
+
+        /// NEEDS TO BE GENERALIZED
+        pub fn whichFaceUp(transform: rl.Matrix) u32 {
+            // indices correspond with face values
+            const rotations = [_]rl.Matrix{
+                rl.Matrix.rotateX(-std.math.pi / 2.0),
+                rl.Matrix.rotateZ(std.math.pi / 2.0),
+                rl.Matrix.identity(),
+                rl.Matrix.rotateX(std.math.pi),
+                rl.Matrix.rotateZ(-std.math.pi / 2.0),
+                rl.Matrix.rotateX(std.math.pi / 2.0),
+            };
+
+            var best_index: usize = 0;
+            var best_error: f32 = std.math.inf(f32);
+
+            for (rotations, 0..) |expected, i| {
+                const diff = matrixError(expected, transform);
+                if (diff < best_error) {
+                    best_error = diff;
+                    best_index = i;
+                }
+            }
+
+            return @as(u32, @intCast(best_index + 1)); // Return 1-based face index
+
+        }
+        fn matrixError(a: rl.Matrix, b: rl.Matrix) f32 {
+            var sum: f32 = 0.0;
+            for (0..16) |i| {
+                const da = @as([*]const f32, @ptrCast(&a))[i];
+                const db = @as([*]const f32, @ptrCast(&b))[i];
+                const d = da - db;
+                sum += d * d;
+            }
+            return sum;
+        }
     };
 
 fn drawCubeWithTransformMatrix(texture: rl.Texture2D, transform: rl.Matrix, size: f32, color: rl.Color) void {
