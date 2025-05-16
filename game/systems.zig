@@ -64,6 +64,11 @@ pub const CameraTrackingSystem = Ecs.System(&[_]Ecs.ComponentsEnum{ .camera_trac
     }
 
     fn run(entities: []engine.ecs.Entity, myecs: *Ecs, state: *game.state.State) void {
+        var prng = std.Random.DefaultPrng.init(blk: {
+            var seed: u64 = undefined;
+            std.posix.getrandom(std.mem.asBytes(&seed)) catch @panic("PROBLEM WITH RANDOM SEED");
+            break :blk seed;
+        });
         std.log.warn("IN TRACKING SYSTEM\n", .{});
         std.debug.assert(entities.len == 1);
         const followed_entity = entities[0];
@@ -71,8 +76,9 @@ pub const CameraTrackingSystem = Ecs.System(&[_]Ecs.ComponentsEnum{ .camera_trac
         const transform = myecs.components.access(rl.Matrix, .transform, idx) orelse @panic("NO TRANSFORM??");
         const body_id = myecs.components.access(i32, .body, idx) orelse @panic("NO BODY??");
         orbitTransform(state, transform.*);
+        const body = state.physics.world.getBody(body_id.*);
 
-        if (rl.isMouseButtonPressed(.left)) {
+        if (!body.isActive()) {
             const direction = rl.Vector3.normalize(rl.Vector3.subtract(state.camera.target, state.camera.position));
             const ray_from = [3]f32{
                 state.camera.position.x,
@@ -129,43 +135,29 @@ pub const CameraTrackingSystem = Ecs.System(&[_]Ecs.ComponentsEnum{ .camera_trac
 
         if (rl.isKeyPressed(.p)) {
             if (state.object_impulse) |impulse| {
-                const direction = rl.Vector3.normalize(rl.Vector3.subtract(impulse.target, impulse.position));
-                // _ = body;
-                // state.object_impulse = null;
-                const body = state.physics.world.getBody(body_id.*);
-                std.log.warn(
-                    \\ APPLYING IMPULSE !!
-                    \\
-                    \\ BODY IS ACTIVE [{}]
-                , .{body.isActive()});
+                const impulse_dir = rl.Vector3.normalize(rl.Vector3.subtract(impulse.target, impulse.position));
 
-                // const imp = [3]f32{ 0.0, 500.0, 0.0 };
+                const force_magnitude: f32 = 100.0;
+                const imp = [3]f32{
+                    impulse_dir.x * force_magnitude,
+                    impulse_dir.y * force_magnitude,
+                    impulse_dir.z * force_magnitude,
+                };
+
+                const rand = prng.random();
+
+                const torque = [3]f32{
+                    (rand.float(f32) - 0.5) * 10.0,
+                    (rand.float(f32) - 0.5) * 10.0,
+                    (rand.float(f32) - 0.5) * 10.0,
+                };
 
                 if (!body.isActive()) {
                     body.setActivationState(.active);
                 }
-
-                // Step 3: Scale to get desired impulse magnitude
-                const force_magnitude: f32 = 100.0;
-                const imp = [3]f32{
-                    direction.x * force_magnitude,
-                    direction.y * force_magnitude,
-                    direction.z * force_magnitude,
-                };
-
-                // const imp =
-                //     [3]f32{
-                //         direction.x * 100.0,
-                //         direction.y * 100.0,
-                //         direction.z * 100.0,
-                //             // impulse.position.x * 80.0,
-                //             // impulse.position.y * 80.0,
-                //             // impulse.position.z * 80.0,
-                //     };
-
-                // body.setActivationState(.active);
                 body.applyCentralImpulse(&imp);
-                // body.applyBodyTorque(&imp);
+                body.applyBodyTorque(&torque);
+                state.object_impulse = null;
             }
         }
     }
