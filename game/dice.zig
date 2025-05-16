@@ -33,6 +33,7 @@ pub const DieType =
 
 fn drawCubeWithTransformMatrix(texture: rl.Texture2D, transform: rl.Matrix, size: f32, color: rl.Color) void {
     const halfsize = size / 2.0;
+    const third: f32 = 1.0 / 3.0;
     const neg_halfsize = halfsize * -1.0;
     gl.rlSetTexture(texture.id);
     gl.rlBegin(gl.rl_quads);
@@ -46,46 +47,57 @@ fn drawCubeWithTransformMatrix(texture: rl.Texture2D, transform: rl.Matrix, size
         },
     }{
         // Front Face (+Z)
-        .{ .normal = [_]f32{ 0.0, 0.0, 1.0 }, .coords = .{
-            .{ .tex_coords = .{ 0.0, 0.0 }, .vertex_coords = .{ neg_halfsize, neg_halfsize, halfsize } },
-            .{ .tex_coords = .{ 1.0, 0.0 }, .vertex_coords = .{ halfsize, neg_halfsize, halfsize } },
-            .{ .tex_coords = .{ 1.0, 1.0 }, .vertex_coords = .{ halfsize, halfsize, halfsize } },
-            .{ .tex_coords = .{ 0.0, 1.0 }, .vertex_coords = .{ neg_halfsize, halfsize, halfsize } },
-        } },
+        // 1
+        .{
+            .normal = [_]f32{ 0.0, 0.0, 1.0 },
+            .coords = .{
+                // start at the bottom left corner
+                // winds counter clockwise
+                .{ .tex_coords = .{ 0.0, third }, .vertex_coords = .{ neg_halfsize, neg_halfsize, halfsize } },
+                .{ .tex_coords = .{ 0.5, third }, .vertex_coords = .{ halfsize, neg_halfsize, halfsize } },
+                .{ .tex_coords = .{ 0.5, 0.0 }, .vertex_coords = .{ halfsize, halfsize, halfsize } },
+                .{ .tex_coords = .{ 0.0, 0.0 }, .vertex_coords = .{ neg_halfsize, halfsize, halfsize } },
+            },
+        },
         // Back Face (-Z)
+        // 6
         .{ .normal = [_]f32{ 0.0, 0.0, -1.0 }, .coords = .{
-            .{ .tex_coords = .{ 1.0, 0.0 }, .vertex_coords = .{ neg_halfsize, neg_halfsize, neg_halfsize } },
+            .{ .tex_coords = .{ 0.5, 1.0 }, .vertex_coords = .{ neg_halfsize, neg_halfsize, neg_halfsize } },
             .{ .tex_coords = .{ 1.0, 1.0 }, .vertex_coords = .{ neg_halfsize, halfsize, neg_halfsize } },
-            .{ .tex_coords = .{ 0.0, 1.0 }, .vertex_coords = .{ halfsize, halfsize, neg_halfsize } },
-            .{ .tex_coords = .{ 0.0, 0.0 }, .vertex_coords = .{ halfsize, neg_halfsize, neg_halfsize } },
+            .{ .tex_coords = .{ 1.0, third * 2.0 }, .vertex_coords = .{ halfsize, halfsize, neg_halfsize } },
+            .{ .tex_coords = .{ 0.5, third * 2.0 }, .vertex_coords = .{ halfsize, neg_halfsize, neg_halfsize } },
         } },
         // Top Face (+Y)
+        // 3
         .{ .normal = [_]f32{ 0.0, 1.0, 0.0 }, .coords = .{
-            .{ .tex_coords = .{ 0.0, 1.0 }, .vertex_coords = .{ neg_halfsize, halfsize, neg_halfsize } },
-            .{ .tex_coords = .{ 0.0, 0.0 }, .vertex_coords = .{ neg_halfsize, halfsize, halfsize } },
-            .{ .tex_coords = .{ 1.0, 0.0 }, .vertex_coords = .{ halfsize, halfsize, halfsize } },
-            .{ .tex_coords = .{ 1.0, 1.0 }, .vertex_coords = .{ halfsize, halfsize, neg_halfsize } },
+            .{ .tex_coords = .{ 0.0, third * 2.0 }, .vertex_coords = .{ neg_halfsize, halfsize, neg_halfsize } },
+            .{ .tex_coords = .{ 0.5, third * 2.0 }, .vertex_coords = .{ neg_halfsize, halfsize, halfsize } },
+            .{ .tex_coords = .{ 0.5, third }, .vertex_coords = .{ halfsize, halfsize, halfsize } },
+            .{ .tex_coords = .{ 0.0, third }, .vertex_coords = .{ halfsize, halfsize, neg_halfsize } },
         } },
         // Bottom Face (-Y)
+        // 4
         .{ .normal = [_]f32{ 0.0, -1.0, 0.0 }, .coords = .{
-            .{ .tex_coords = .{ 1.0, 1.0 }, .vertex_coords = .{ neg_halfsize, neg_halfsize, neg_halfsize } },
-            .{ .tex_coords = .{ 0.0, 1.0 }, .vertex_coords = .{ halfsize, neg_halfsize, neg_halfsize } },
-            .{ .tex_coords = .{ 0.0, 0.0 }, .vertex_coords = .{ halfsize, neg_halfsize, halfsize } },
-            .{ .tex_coords = .{ 1.0, 0.0 }, .vertex_coords = .{ neg_halfsize, neg_halfsize, halfsize } },
+            .{ .tex_coords = .{ 0.5, third * 2.0 }, .vertex_coords = .{ neg_halfsize, neg_halfsize, neg_halfsize } },
+            .{ .tex_coords = .{ 1.0, third * 2.0 }, .vertex_coords = .{ halfsize, neg_halfsize, neg_halfsize } },
+            .{ .tex_coords = .{ 1.0, third }, .vertex_coords = .{ halfsize, neg_halfsize, halfsize } },
+            .{ .tex_coords = .{ 0.5, third }, .vertex_coords = .{ neg_halfsize, neg_halfsize, halfsize } },
         } },
         // Right Face (+X)
+        // 2
         .{ .normal = [_]f32{ 1.0, 0.0, 0.0 }, .coords = .{
-            .{ .tex_coords = .{ 1.0, 0.0 }, .vertex_coords = .{ halfsize, neg_halfsize, neg_halfsize } },
-            .{ .tex_coords = .{ 1.0, 1.0 }, .vertex_coords = .{ halfsize, halfsize, neg_halfsize } },
-            .{ .tex_coords = .{ 0.0, 1.0 }, .vertex_coords = .{ halfsize, halfsize, halfsize } },
-            .{ .tex_coords = .{ 0.0, 0.0 }, .vertex_coords = .{ halfsize, neg_halfsize, halfsize } },
+            .{ .tex_coords = .{ 0.5, third }, .vertex_coords = .{ halfsize, neg_halfsize, neg_halfsize } },
+            .{ .tex_coords = .{ 1.0, third }, .vertex_coords = .{ halfsize, halfsize, neg_halfsize } },
+            .{ .tex_coords = .{ 1.0, 0.0 }, .vertex_coords = .{ halfsize, halfsize, halfsize } },
+            .{ .tex_coords = .{ 0.5, 0.0 }, .vertex_coords = .{ halfsize, neg_halfsize, halfsize } },
         } },
         // Left Face (-X)
+        // 5
         .{ .normal = [_]f32{ -1.0, 0.0, 0.0 }, .coords = .{
-            .{ .tex_coords = .{ 0.0, 0.0 }, .vertex_coords = .{ neg_halfsize, neg_halfsize, neg_halfsize } },
-            .{ .tex_coords = .{ 1.0, 0.0 }, .vertex_coords = .{ neg_halfsize, neg_halfsize, halfsize } },
-            .{ .tex_coords = .{ 1.0, 1.0 }, .vertex_coords = .{ neg_halfsize, halfsize, halfsize } },
-            .{ .tex_coords = .{ 0.0, 1.0 }, .vertex_coords = .{ neg_halfsize, halfsize, neg_halfsize } },
+            .{ .tex_coords = .{ 0.0, 1.0 }, .vertex_coords = .{ neg_halfsize, neg_halfsize, neg_halfsize } },
+            .{ .tex_coords = .{ 0.5, 1.0 }, .vertex_coords = .{ neg_halfsize, neg_halfsize, halfsize } },
+            .{ .tex_coords = .{ 0.5, third * 2.0 }, .vertex_coords = .{ neg_halfsize, halfsize, halfsize } },
+            .{ .tex_coords = .{ 0.0, third * 2.0 }, .vertex_coords = .{ neg_halfsize, halfsize, neg_halfsize } },
         } },
     };
 
