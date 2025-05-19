@@ -178,14 +178,139 @@ fn drawCubeWithTransformMatrix(texture: rl.Texture2D, transform: rl.Matrix, size
     gl.rlSetTexture(0);
 }
 
+fn getDieMeshes(
+    size: f32,
+) [6]rl.Mesh {
+    const halfsize = size / 2.0;
+    const third: f32 = 1.0 / 3.0;
+    const neg_halfsize = halfsize * -1.0;
+
+    const faces_data = [6]struct {
+        normal: [3]f32,
+        coords: [4]struct {
+            tex_coords: [2]f32,
+            vertex_coords: [3]f32,
+        },
+    }{
+        // Front Face (+Z)
+        // 1
+        .{
+            .normal = [_]f32{ 0.0, 0.0, 1.0 },
+            .coords = .{
+                // start at the bottom left corner
+                // winds counter clockwise
+                .{ .tex_coords = .{ 0.0, third }, .vertex_coords = .{ neg_halfsize, neg_halfsize, halfsize } },
+                .{ .tex_coords = .{ 0.5, third }, .vertex_coords = .{ halfsize, neg_halfsize, halfsize } },
+                .{ .tex_coords = .{ 0.5, 0.0 }, .vertex_coords = .{ halfsize, halfsize, halfsize } },
+                .{ .tex_coords = .{ 0.0, 0.0 }, .vertex_coords = .{ neg_halfsize, halfsize, halfsize } },
+            },
+        },
+        // Back Face (-Z)
+        // 6
+        .{ .normal = [_]f32{ 0.0, 0.0, -1.0 }, .coords = .{
+            .{ .tex_coords = .{ 0.5, 1.0 }, .vertex_coords = .{ neg_halfsize, neg_halfsize, neg_halfsize } },
+            .{ .tex_coords = .{ 1.0, 1.0 }, .vertex_coords = .{ neg_halfsize, halfsize, neg_halfsize } },
+            .{ .tex_coords = .{ 1.0, third * 2.0 }, .vertex_coords = .{ halfsize, halfsize, neg_halfsize } },
+            .{ .tex_coords = .{ 0.5, third * 2.0 }, .vertex_coords = .{ halfsize, neg_halfsize, neg_halfsize } },
+        } },
+        // Top Face (+Y)
+        // 3
+        .{ .normal = [_]f32{ 0.0, 1.0, 0.0 }, .coords = .{
+            .{ .tex_coords = .{ 0.0, third * 2.0 }, .vertex_coords = .{ neg_halfsize, halfsize, neg_halfsize } },
+            .{ .tex_coords = .{ 0.5, third * 2.0 }, .vertex_coords = .{ neg_halfsize, halfsize, halfsize } },
+            .{ .tex_coords = .{ 0.5, third }, .vertex_coords = .{ halfsize, halfsize, halfsize } },
+            .{ .tex_coords = .{ 0.0, third }, .vertex_coords = .{ halfsize, halfsize, neg_halfsize } },
+        } },
+        // Bottom Face (-Y)
+        // 4
+        .{ .normal = [_]f32{ 0.0, -1.0, 0.0 }, .coords = .{
+            .{ .tex_coords = .{ 0.5, third * 2.0 }, .vertex_coords = .{ neg_halfsize, neg_halfsize, neg_halfsize } },
+            .{ .tex_coords = .{ 1.0, third * 2.0 }, .vertex_coords = .{ halfsize, neg_halfsize, neg_halfsize } },
+            .{ .tex_coords = .{ 1.0, third }, .vertex_coords = .{ halfsize, neg_halfsize, halfsize } },
+            .{ .tex_coords = .{ 0.5, third }, .vertex_coords = .{ neg_halfsize, neg_halfsize, halfsize } },
+        } },
+        // Right Face (+X)
+        // 2
+        .{ .normal = [_]f32{ 1.0, 0.0, 0.0 }, .coords = .{
+            .{ .tex_coords = .{ 0.5, third }, .vertex_coords = .{ halfsize, neg_halfsize, neg_halfsize } },
+            .{ .tex_coords = .{ 1.0, third }, .vertex_coords = .{ halfsize, halfsize, neg_halfsize } },
+            .{ .tex_coords = .{ 1.0, 0.0 }, .vertex_coords = .{ halfsize, halfsize, halfsize } },
+            .{ .tex_coords = .{ 0.5, 0.0 }, .vertex_coords = .{ halfsize, neg_halfsize, halfsize } },
+        } },
+        // Left Face (-X)
+        // 5
+        .{ .normal = [_]f32{ -1.0, 0.0, 0.0 }, .coords = .{
+            .{ .tex_coords = .{ 0.0, 1.0 }, .vertex_coords = .{ neg_halfsize, neg_halfsize, neg_halfsize } },
+            .{ .tex_coords = .{ 0.5, 1.0 }, .vertex_coords = .{ neg_halfsize, neg_halfsize, halfsize } },
+            .{ .tex_coords = .{ 0.5, third * 2.0 }, .vertex_coords = .{ neg_halfsize, halfsize, halfsize } },
+            .{ .tex_coords = .{ 0.0, third * 2.0 }, .vertex_coords = .{ neg_halfsize, halfsize, neg_halfsize } },
+        } },
+    };
+
+    var meshes: [6]rl.Mesh = undefined;
+    for (0.., faces_data) |meshidx, d| {
+        const vertices = [_:0]f32{
+            d.coords[0].vertex_coords[0],
+            d.coords[0].vertex_coords[1],
+            d.coords[0].vertex_coords[2],
+            d.coords[1].vertex_coords[0],
+            d.coords[1].vertex_coords[1],
+            d.coords[1].vertex_coords[2],
+            d.coords[2].vertex_coords[0],
+            d.coords[2].vertex_coords[1],
+            d.coords[2].vertex_coords[2],
+            d.coords[3].vertex_coords[0],
+            d.coords[3].vertex_coords[1],
+            d.coords[3].vertex_coords[2],
+            0,
+        };
+        const texcoords = [_:0]f32{
+            d.coords[0].tex_coords[0],
+            d.coords[0].tex_coords[1],
+            d.coords[1].tex_coords[0],
+            d.coords[1].tex_coords[1],
+            d.coords[2].tex_coords[0],
+            d.coords[2].tex_coords[1],
+            d.coords[3].tex_coords[0],
+            d.coords[3].tex_coords[1],
+            0,
+        };
+        const normals = [_:0]f32{ d.normal[0], d.normal[1], d.normal[2], 0 };
+        const mesh = rl.Mesh{
+            .vertexCount = d.coords.len * 3,
+            .triangleCount = d.coords.len,
+            .vertices = @constCast(@ptrCast(&vertices)),
+            .texcoords = @constCast(@ptrCast(&texcoords)),
+            .normals = @constCast(@ptrCast(&normals)),
+            .texcoords2 = null,
+            .tangents = null,
+            .colors = null,
+            .indices = null,
+            .animVertices = null,
+            .animNormals = null,
+            .boneIds = null,
+            .boneWeights = null,
+            .boneMatrices = null,
+            .boneCount = 0,
+            .vaoId = 0,
+            .vboId = null,
+        };
+
+        meshes[meshidx] = mesh;
+    }
+    return meshes;
+}
+
 /// Each die has two "layers"
-/// The first is a mesh that is simply the die shape with a certain material
-/// The second is another mesh that is manually rendered with the given `quad_texture`
 pub fn Die(comptime numbers_atlas_path: [:0]const u8) type {
     return struct {
         _type: DieType,
-        mesh: rl.Mesh,
+        /// Mesh 0 is the inner cube mesh
+        /// The other 6 are each face with a texture
+        meshes: [7]rl.Mesh,
+        /// This is the material applied to Mesh 0
         material: rl.Material,
+        /// This is the texture mapped onto the other 6 Meshes
         faces_texture: rl.Texture2D,
 
         fn zeroTermAtlasPath() [:0]const u8 {
@@ -206,18 +331,34 @@ pub fn Die(comptime numbers_atlas_path: [:0]const u8) type {
             const numbers_atlas_img = rl.loadImage(numbers_atlas_path) catch @panic("INVALID ATLAS PATH");
             const quad_tex = rl.loadTextureFromImage(numbers_atlas_img) catch @panic("COULD NOT GET TEXTURE FROM ATLAS IMAGE");
             const mesh = try _type.createMeshFunc()(args);
+            const meshes = getDieMeshes(args.@"0");
+            var all_meshes: [7]rl.Mesh = undefined;
+            all_meshes[0] = mesh;
+
+            for (meshes, 1..) |m, i| {
+                all_meshes[i] = m;
+            }
 
             return @This(){
                 ._type = _type,
-                .mesh = mesh,
+                .meshes = all_meshes,
                 .material = material,
                 .faces_texture = quad_tex,
             };
         }
 
         pub fn draw(self: *@This(), world_transform: rl.Matrix) !void {
-            self.mesh.draw(self.material, world_transform);
-            // Draw faces
+            std.log.warn(
+                \\ Drawing Dice
+                \\
+            , .{});
+            self.meshes[0].draw(self.material, world_transform);
+
+            var other_meshes_material = try rl.loadMaterialDefault();
+            other_meshes_material.maps[0].texture = self.faces_texture;
+            for (self.meshes[1..]) |mesh| {
+                mesh.draw(other_meshes_material, world_transform);
+            }
             switch (self._type) {
                 .six => drawCubeWithTransformMatrix(self.faces_texture, world_transform, 1.001, rl.Color.white),
             }
