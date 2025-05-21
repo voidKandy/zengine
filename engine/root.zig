@@ -15,7 +15,7 @@ pub const MeshBundle = struct {
     transform: rl.Matrix,
     materials: []const rl.Material,
     meshes: std.ArrayList(rl.Mesh),
-    /// Maps index of mesh to index of material
+    /// Maps *index of mesh* to *index of material*
     mesh_material_map: std.AutoHashMap(usize, usize),
     const Self = @This();
 
@@ -39,6 +39,7 @@ pub const MeshBundle = struct {
         if (self.materials.len < material_idx) {
             return error.InvalidMaterialIndex;
         }
+
         const idx =
             self.meshes.items.len;
         try self.meshes.append(mesh);
@@ -58,6 +59,17 @@ pub const MeshBundle = struct {
 
             const mesh = self.meshes.items[mesh_idx];
             const mat = self.materials[mat_idx];
+
+            if (@intFromPtr(&mesh) == 0 or @intFromPtr(&mat) == 0) {
+                std.log.err(
+                    \\ Mesh or Material is null
+                    \\ Mesh Idx: {}
+                    \\ Material Idx: {}
+                    \\ 
+                , .{ mesh_idx, mat_idx });
+                return;
+            }
+
             mesh.draw(mat, self.transform);
         }
     }

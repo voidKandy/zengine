@@ -26,17 +26,9 @@ fn draw(myecs: *Ecs, state: *game.state.State) void {
     rl.beginMode3D(state.camera);
     defer rl.endMode3D();
 
-    const phys_mesh_sig = s: {
+    const bundle_sig = s: {
         var s = Ecs.Signature.initEmpty();
-        s.set(@intFromEnum(Ecs.ComponentsEnum.meshes));
-        s.set(@intFromEnum(Ecs.ComponentsEnum.transform));
-        s.set(@intFromEnum(Ecs.ComponentsEnum.material));
-        break :s s;
-    };
-    const die_sig = s: {
-        var s = Ecs.Signature.initEmpty();
-        s.set(@intFromEnum(Ecs.ComponentsEnum.die));
-        s.set(@intFromEnum(Ecs.ComponentsEnum.transform));
+        s.set(@intFromEnum(Ecs.ComponentsEnum.bundle));
         break :s s;
     };
 
@@ -46,21 +38,16 @@ fn draw(myecs: *Ecs, state: *game.state.State) void {
     }
 
     for (0.., myecs.entities.manager.signatures) |i, sig| {
-        if (sig.supersetOf(phys_mesh_sig) or sig.supersetOf(die_sig)) {
+        if (sig.supersetOf(bundle_sig)) {
             const identifier = myecs.entities.manager.identifier_map.get(i) orelse break;
+
+            std.log.warn(
+                \\ Drawing Entity {}
+                \\
+            , .{identifier});
             const idx = myecs.entities.manager.index_map.get(identifier) orelse std.debug.panic("Entity: {} Has no index?\n", .{identifier});
-            const transform = myecs.components.access(rl.Matrix, Ecs.ComponentsEnum.transform, idx).?;
-            if (myecs.components.access(game.Die, .die, idx)) |die| {
-                std.log.warn("drawing die\n", .{});
-                try die.draw(transform.*);
-                continue;
-            }
-
-            const meshes = myecs.components.access([game.MAX_MESHES_PER_ENTITY]game.MaterialMesh, Ecs.ComponentsEnum.meshes, idx).?;
-            // const material = myecs.components.access(rl.Material, Ecs.ComponentsEnum.material, idx).?;
-
-            for (meshes.*) |m|
-                rl.drawMesh(m.@"0", m.@"1", transform.*);
+            const bundle = myecs.components.access(engine.MeshBundle, .bundle, idx).?;
+            bundle.draw();
         }
     }
 
@@ -69,83 +56,36 @@ fn draw(myecs: *Ecs, state: *game.state.State) void {
 
 fn createRoom(ecs: *Ecs, state: *game.state.State, size: f32) !struct {
     floor_shape: zbt.Shape,
-    // wall_shape: zbt.Shape,
 } {
     const y_pos: f32 = 0.0;
     const half_size = size / 2.0;
     const floor_shape = zbt.initBoxShape(&[_]f32{ half_size, 0.1, half_size });
-    // const wall_shape = zbt.initBoxShape(&[_]f32{ half_size, half_size, 0.1 });
-    // FLOOR
-    {
-        var handle = try ecs.entities.register();
+    var handle = try ecs.entities.register();
+    std.log.warn(
+        \\ Floor ID: {}
+        \\
+    , .{handle.identifier});
 
-        const mesh =
-            rl.genMeshPlane(size, size, 1, 1);
+    const mesh =
+        rl.genMeshPlane(size, size, 1, 1);
 
-        var material = try rl.loadMaterialDefault();
-        material.maps[@as(usize, @intFromEnum(rl.MATERIAL_MAP_DIFFUSE))].color = rl.Color.dark_green;
-        try handle.addComponent(.meshes, &mesh);
+    var material = try rl.loadMaterialDefault();
+    material.maps[@as(usize, @intFromEnum(rl.MATERIAL_MAP_DIFFUSE))].color = rl.Color.dark_green;
 
-        const transform = rl.Matrix.multiply(rl.Matrix.identity(), rl.Matrix.translate(0.0, y_pos, 0.0));
-        try handle.addComponent(.transform, &transform);
+    const transform = rl.Matrix.multiply(rl.Matrix.identity(), rl.Matrix.translate(0.0, y_pos, 0.0));
+    var bundle = engine.MeshBundle.init(ecs.allocator, &[_]rl.Material{material}, transform);
+    try bundle.add(mesh, 0);
+    try handle.addComponent(.bundle, &bundle);
 
-        try handle.addComponent(.material, &material);
-
-        const shape = floor_shape.asShape();
-        const body = engine.util.transformMassShapeToBody(transform, 0.0, shape);
-        body.setRestitution(1.0);
-        const body_id = state.physics.world.getNumBodies();
-        state.physics.world.addBody(body);
-        try handle.addComponent(.body, &body_id);
-    }
-
-    // WALLS
-    // const wall_positions_rotations = [_]struct { rl.Vector3, rl.Matrix }{ .{
-    //     rl.Vector3.init(0.0, y_pos, -half_size),
-    //     rl.Matrix.identity(),
-    // }, .{
-    //     rl.Vector3.init(0.0, y_pos, half_size),
-    //     rl.Matrix.rotateY(std.math.pi),
-    // }, .{
-    //     rl.Vector3.init(-half_size, y_pos, 0.0),
-    //     rl.Matrix.rotateY(-std.math.pi / 2.0),
-    // }, .{
-    //     rl.Vector3.init(half_size, y_pos, 0.0),
-    //     rl.Matrix.rotateY(std.math.pi / 2.0),
-    // } };
-
-    // for (wall_positions_rotations, 0..) |pos_rot, i| {
-    //     const color = if (i < 2)
-    //         rl.Color.dark_gray
-    //     else
-    //         rl.Color.light_gray;
-    //     const pos, const rot = pos_rot;
-    //     var handle = try ecs.entities.register();
-
-    //     const mesh = rl.genMeshCube(size, size, 0.1);
-    //     try handle.addComponent(.mesh, &mesh);
-
-    //     const transform = rl.Matrix.multiply(rot, rl.Matrix.translate(
-    //         pos.x,
-    //         pos.y,
-    //         pos.z,
-    //     ));
-    //     try handle.addComponent(.transform, &transform);
-
-    //     var material = try rl.loadMaterialDefault();
-    //     material.maps[@as(usize, @intFromEnum(rl.MATERIAL_MAP_DIFFUSE))].color = color;
-    //     try handle.addComponent(.material, &material);
-
-    //     const shape = wall_shape.asShape();
-    //     const body = engine.util.transformMassShapeToBody(transform, 0.0, shape);
-    //     const body_id = state.physics.world.getNumBodies();
-    //     state.physics.world.addBody(body);
-    //     try handle.addComponent(.body, &body_id);
-    // }
+    const shape = floor_shape.asShape();
+    const body = engine.util.transformMassShapeToBody(transform, 0.0, shape);
+    body.setRestitution(1.0);
+    const body_id = state.physics.world.getNumBodies();
+    state.physics.world.addBody(body);
+    try handle.addComponent(.body, &body_id);
 
     return .{
         .floor_shape = floor_shape.asShape(),
-        // .wall_shape = wall_shape.asShape()
     };
 }
 
@@ -171,7 +111,6 @@ pub fn main() anyerror!void {
     defer ecs.deinit();
     try ecs.systems.register(game.systems.CameraTrackingSystem{});
     try ecs.systems.register(game.systems.SyncPhysicsSystem{});
-    // try ecs.systems.register(game.systems.PlayerInteractSystem{});
 
     // World Setup
     //---
@@ -201,8 +140,48 @@ pub fn main() anyerror!void {
 
     defer state.deinit();
 
+    // const room_shapes = try createRoom(&ecs, &state, 500.0);
+    // defer {
+    //     room_shapes.floor_shape.deinit();
+    // }
+
+    {
+        const size = 500.0;
+        const y_pos: f32 = 0.0;
+        const half_size = size / 2.0;
+        const floor_shape = zbt.initBoxShape(&[_]f32{ half_size, 0.1, half_size });
+        var handle = try ecs.entities.register();
+        std.log.warn(
+            \\ Floor ID: {}
+            \\
+        , .{handle.identifier});
+
+        const mesh =
+            rl.genMeshPlane(size, size, 1, 1);
+
+        var material = try rl.loadMaterialDefault();
+        material.maps[@as(usize, @intFromEnum(rl.MATERIAL_MAP_DIFFUSE))].color = rl.Color.dark_green;
+
+        const transform = rl.Matrix.multiply(rl.Matrix.identity(), rl.Matrix.translate(0.0, y_pos, 0.0));
+        var bundle = engine.MeshBundle.init(ecs.allocator, &[_]rl.Material{material}, transform);
+        try bundle.add(mesh, 0);
+        try handle.addComponent(.bundle, &bundle);
+
+        const shape = floor_shape.asShape();
+        const body = engine.util.transformMassShapeToBody(transform, 0.0, shape);
+        body.setRestitution(1.0);
+        const body_id = state.physics.world.getNumBodies();
+        state.physics.world.addBody(body);
+        try handle.addComponent(.body, &body_id);
+    }
+
     // I believe this shape needs to be *half* the size of the mesh??
-    const d6shape = zbt.initBoxShape(&[_]f32{ 0.5, 0.5, 0.5 });
+    const d6_size = 1.0;
+    const d6shape = zbt.initBoxShape(&[_]f32{
+        d6_size / 2.0,
+        d6_size / 2.0,
+        d6_size / 2.0,
+    });
     defer d6shape.deinit();
 
     var d6_entity_idx: usize = undefined;
@@ -211,20 +190,31 @@ pub fn main() anyerror!void {
     // ---
     {
         var handle = try ecs.entities.register();
-        d6_entity_idx = handle.index() orelse @panic("NO INDEX??");
 
-        var material = try rl.loadMaterialDefault();
+        d6_entity_idx = handle.index() orelse @panic("NO INDEX??");
+        var inner_material = try rl.loadMaterialDefault();
         const shader = try rl.loadShader("resources/shaders/basic.vs", "resources/shaders/basic.fs");
         if (shader.id == 0) {
             @panic("SHADER FAILED TO LOAD");
         }
-        material.shader = shader;
-        const die = try game.Die.new(material, .six, .{ 1.0, 1.0, 1.0 });
-        try handle.addComponent(Ecs.ComponentsEnum.die, &die);
+        inner_material.shader = shader;
+
+        var face_material = try rl.loadMaterialDefault();
+        const numbers_atlas_texture = rl.loadTexture("resources/numbers.png") catch @panic("COULD NOT GET TEXTURE FROM ATLAS IMAGE");
+        face_material.maps[0].texture = numbers_atlas_texture;
 
         const transform = rl.Matrix.multiply(rl.Matrix.identity(), rl.Matrix.translate(0.0, 2.0, 0.0));
-        // We use the transform with the `Die` to store *where* it is
-        try handle.addComponent(Ecs.ComponentsEnum.transform, &transform);
+        var bundle = engine.MeshBundle.init(ecs.allocator, &[_]rl.Material{ inner_material, face_material }, transform);
+
+        const inner_mesh = rl.genMeshCube(d6_size, d6_size, d6_size);
+        const faces = game.dice.genD6Faces(d6_size * 1.01);
+
+        try bundle.add(inner_mesh, 0);
+        for (faces) |mesh| {
+            try bundle.add(mesh, 1);
+        }
+
+        try handle.addComponent(.bundle, &bundle);
 
         const shape = d6shape.asShape();
         const mass: f32 = 2.0;
@@ -248,14 +238,6 @@ pub fn main() anyerror!void {
         state.physics.world.addBody(body);
         try handle.addComponent(.body, &body_id);
         try handle.addComponent(.camera_track, &true);
-
-        // try handle.addComponent(.physics_interact, &true);
-    }
-
-    const room_shapes = try createRoom(&ecs, &state, 500.0);
-    defer {
-        room_shapes.floor_shape.deinit();
-        // room_shapes.wall_shape.deinit();
     }
 
     // Main game loop
@@ -267,10 +249,6 @@ pub fn main() anyerror!void {
         _ = state.physics.world.stepSimulation(dt, .{});
         try ecs.runSystems(&state);
 
-        // Impulse
-        // ---
-
-        // state.pick.p2p.*
         // Draw
         //---
         rl.beginDrawing();
@@ -286,7 +264,6 @@ pub fn main() anyerror!void {
         }
         if (state.upward_face) |face| {
             const text = try std.fmt.allocPrintZ(arena.allocator(), "Upward face: {}", .{face});
-
             rl.drawText(text, 100, 100, 10, rl.Color.green);
         }
         rl.drawFPS(10, 10);

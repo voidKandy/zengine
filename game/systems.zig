@@ -12,7 +12,7 @@ const Ecs = game.Ecs;
 /// *move* it. Then I can draw the impulse direction
 /// This poses an important *problem* with the way `System`s are implemented:
 /// I cannot reference entites with *different* signatures in a system
-pub const CameraTrackingSystem = Ecs.System(&[_]Ecs.ComponentsEnum{ .camera_track, .transform, .body }, struct {
+pub const CameraTrackingSystem = Ecs.System(&[_]Ecs.ComponentsEnum{ .camera_track, .bundle, .body }, struct {
     const mouse_sensitivity: f32 = 0.005;
     var distance: f32 = 10.0;
     var yaw: f32 = 0.0; // Horizontal angle (radians)
@@ -68,13 +68,15 @@ pub const CameraTrackingSystem = Ecs.System(&[_]Ecs.ComponentsEnum{ .camera_trac
         std.debug.assert(entities.len == 1);
         const followed_entity = entities[0];
         const idx = myecs.entities.manager.index_map.get(followed_entity).?;
-        const transform = myecs.components.access(rl.Matrix, .transform, idx) orelse @panic("NO TRANSFORM??");
+
+        const bundle = myecs.components.access(engine.MeshBundle, .bundle, idx) orelse @panic("NO BUNDLE??");
         const body_id = myecs.components.access(i32, .body, idx) orelse @panic("NO BODY??");
-        orbitTransform(state, transform.*);
+        const transform = bundle.transform;
+        orbitTransform(state, transform);
         const body = state.physics.world.getBody(body_id.*);
 
         if (!body.isActive()) {
-            const face_up = game.dice.DieType.whichFaceUp(transform.*);
+            const face_up = game.dice.DieType.whichFaceUp(transform);
             state.upward_face = face_up;
             const direction = rl.Vector3.normalize(rl.Vector3.subtract(state.camera.target, state.camera.position));
             const ray_from = [3]f32{
@@ -161,17 +163,23 @@ pub const CameraTrackingSystem = Ecs.System(&[_]Ecs.ComponentsEnum{ .camera_trac
     }
 }.run);
 
-pub const SyncPhysicsSystem = Ecs.System(&[_]Ecs.ComponentsEnum{ .transform, .body }, struct {
+pub const SyncPhysicsSystem = Ecs.System(&[_]Ecs.ComponentsEnum{ .bundle, .body }, struct {
     fn run(entities: []engine.ecs.Entity, myecs: *Ecs, state: *game.state.State) void {
         std.log.warn("IN SYNC SYSTEM\n", .{});
         for (entities) |e| {
             const idx = myecs.entities.manager.index_map.get(e).?;
-            const stored_transform = myecs.components.access(rl.Matrix, .transform, idx) orelse {
-                std.log.warn("Entity does not have transform component\n", .{});
+            const bundle = myecs.components.access(engine.MeshBundle, .bundle, idx) orelse {
+                std.log.warn(
+                    \\ Entity does not have bundle???
+                    \\
+                , .{});
                 continue;
             };
             const body_id = myecs.components.access(i32, .body, idx) orelse {
-                std.log.warn("Entity does not have body component\n", .{});
+                std.log.warn(
+                    \\ Entity does not have body??
+                    \\
+                , .{});
                 continue;
             };
             // std.log.warn("DRAWING: {}\n", .{e});
@@ -181,80 +189,21 @@ pub const SyncPhysicsSystem = Ecs.System(&[_]Ecs.ComponentsEnum{ .transform, .bo
             var transform: [12]f32 = undefined;
             body.getGraphicsWorldTransform(&transform);
 
-            stored_transform.*.m0 = transform[0];
-            stored_transform.*.m4 = transform[1];
-            stored_transform.*.m8 = transform[2];
+            bundle.*.transform.m0 = transform[0];
+            bundle.*.transform.m4 = transform[1];
+            bundle.*.transform.m8 = transform[2];
 
-            stored_transform.*.m1 = transform[3];
-            stored_transform.*.m5 = transform[4];
-            stored_transform.*.m9 = transform[5];
+            bundle.*.transform.m1 = transform[3];
+            bundle.*.transform.m5 = transform[4];
+            bundle.*.transform.m9 = transform[5];
 
-            stored_transform.*.m2 = transform[6];
-            stored_transform.*.m6 = transform[7];
-            stored_transform.*.m10 = transform[8];
+            bundle.*.transform.m2 = transform[6];
+            bundle.*.transform.m6 = transform[7];
+            bundle.*.transform.m10 = transform[8];
 
-            stored_transform.*.m12 = transform[9];
-            stored_transform.*.m13 = transform[10];
-            stored_transform.*.m14 = transform[11];
-        }
-    }
-}.run);
-
-pub const PlayerInteractSystem = Ecs.System(&[_]Ecs.ComponentsEnum{.physics_interact}, struct {
-    fn run(entities: []engine.ecs.Entity, myecs: *Ecs, state: *game.state.State) void {
-        std.log.warn("IN PLAYER SYSTEM\n", .{});
-        for (entities) |e| {
-            const idx = myecs.entities.manager.index_map.get(e).?;
-
-            const interact = myecs.components.access(bool, .physics_interact, idx) orelse continue;
-            // const mesh = myecs.components.access(rl.Mesh, .mesh, idx).?;
-            // _ = mesh;
-
-            if (interact.* and rl.isMouseButtonPressed(rl.MouseButton.left)) {
-                const ray = rl.getScreenToWorldRay(rl.getMousePosition(), state.camera);
-
-                const ray_from = [3]f32{
-                    ray.position.x,
-                    ray.position.y,
-                    ray.position.z,
-                };
-
-                // const ray_to = [3]f32{
-                //     ray.position.x + ray.direction.x * 1000.0,
-                //     ray.position.y + ray.direction.y * 1000.0,
-                //     ray.position.z + ray.direction.z * 1000.0,
-                // };
-                const ray_to = [3]f32{
-                    // ray.position.x + ray.direction.x * 1000.0,
-                    // ray.position.y + ray.direction.y * 1000.0,
-                    // ray.position.z + ray.direction.z * 1000.0,
-                };
-
-                var result: zbt.RayCastResult = undefined;
-                const is_hit = state.physics.world.rayTestClosest(
-                    // zm.arr3Ptr(&mousepos),
-                    &ray_from,
-                    &ray_to,
-                    .{ .default = true },
-                    zbt.CollisionFilter.all,
-                    .{ .use_gjk_convex_test = true },
-                    &result,
-                );
-
-                if (is_hit) if (result.body) |b| {
-                    std.log.warn(
-                        \\ HIT!!!
-                    , .{});
-                    const impulse_strength: f32 = 20.0;
-
-                    const impulse = [3]f32{
-                        ray.direction.x * impulse_strength,
-                        ray.direction.y * impulse_strength,
-                        ray.direction.z * impulse_strength,
-                    };
-                    b.applyCentralImpulse(&impulse);
-                };
-            }
+            bundle.*.transform.m12 = transform[9];
+            bundle.*.transform.m13 = transform[10];
+            bundle.*.transform.m14 = transform[11];
         }
     }
 }.run);
