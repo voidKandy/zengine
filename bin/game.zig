@@ -51,7 +51,27 @@ fn draw(myecs: *Ecs, state: *game.state.State) void {
         }
     }
 
-    rl.drawGrid(200, 5.0);
+    // rl.drawGrid(200, 5.0);
+
+    {
+        const lines = state.physics.debug.lines.items;
+        // const num_vertices = lines.len;
+        var i: usize = 0;
+        while (i + 1 < lines.len) : (i += 2) {
+            const start = rl.Vector3{
+                .x = lines[i].position[0],
+                .y = lines[i].position[1],
+                .z = lines[i].position[2],
+            };
+            const end = rl.Vector3{
+                .x = lines[i + 1].position[0],
+                .y = lines[i + 1].position[1],
+                .z = lines[i + 1].position[2],
+            };
+            // const color = lines[i].color;
+            rl.drawLine3D(start, end, rl.Color.ray_white);
+        }
+    }
 }
 
 fn createRoom(ecs: *Ecs, state: *game.state.State, size: f32) !struct {
@@ -255,8 +275,8 @@ pub fn main() anyerror!void {
         defer rl.endDrawing();
         rl.clearBackground(rl.Color.black);
 
-        draw(&ecs, &state);
         state.physics.world.debugDrawAll();
+        draw(&ecs, &state);
         state.physics.debug.lines.clearRetainingCapacity();
 
         if (state.object_impulse) |_| {
