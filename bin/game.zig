@@ -28,7 +28,7 @@ fn draw(myecs: *Ecs, state: *game.state.State) void {
 
     const phys_mesh_sig = s: {
         var s = Ecs.Signature.initEmpty();
-        s.set(@intFromEnum(Ecs.ComponentsEnum.mesh));
+        s.set(@intFromEnum(Ecs.ComponentsEnum.meshes));
         s.set(@intFromEnum(Ecs.ComponentsEnum.transform));
         s.set(@intFromEnum(Ecs.ComponentsEnum.material));
         break :s s;
@@ -56,9 +56,11 @@ fn draw(myecs: *Ecs, state: *game.state.State) void {
                 continue;
             }
 
-            const mesh = myecs.components.access(rl.Mesh, Ecs.ComponentsEnum.mesh, idx).?;
-            const material = myecs.components.access(rl.Material, Ecs.ComponentsEnum.material, idx).?;
-            rl.drawMesh(mesh.*, material.*, transform.*);
+            const meshes = myecs.components.access([game.MAX_MESHES_PER_ENTITY]game.MaterialMesh, Ecs.ComponentsEnum.meshes, idx).?;
+            // const material = myecs.components.access(rl.Material, Ecs.ComponentsEnum.material, idx).?;
+
+            for (meshes.*) |m|
+                rl.drawMesh(m.@"0", m.@"1", transform.*);
         }
     }
 
@@ -80,17 +82,18 @@ fn createRoom(ecs: *Ecs, state: *game.state.State, size: f32) !struct {
         const mesh =
             rl.genMeshPlane(size, size, 1, 1);
 
-        try handle.addComponent(.mesh, &mesh);
+        var material = try rl.loadMaterialDefault();
+        material.maps[@as(usize, @intFromEnum(rl.MATERIAL_MAP_DIFFUSE))].color = rl.Color.dark_green;
+        try handle.addComponent(.meshes, &mesh);
 
         const transform = rl.Matrix.multiply(rl.Matrix.identity(), rl.Matrix.translate(0.0, y_pos, 0.0));
         try handle.addComponent(.transform, &transform);
 
-        var material = try rl.loadMaterialDefault();
-        material.maps[@as(usize, @intFromEnum(rl.MATERIAL_MAP_DIFFUSE))].color = rl.Color.dark_green;
         try handle.addComponent(.material, &material);
 
         const shape = floor_shape.asShape();
         const body = engine.util.transformMassShapeToBody(transform, 0.0, shape);
+        body.setRestitution(1.0);
         const body_id = state.physics.world.getNumBodies();
         state.physics.world.addBody(body);
         try handle.addComponent(.body, &body_id);
