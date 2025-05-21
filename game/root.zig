@@ -12,21 +12,7 @@ pub const Die = dice.Die("resources/numbers.png");
 const MAX_N_ENTITIES: usize = 1024;
 const MAX_N_SYSTEMS: usize = 1024;
 
-pub const MaterialMesh = struct {
-    rl.Mesh,
-    *rl.Material,
-};
 pub const MAX_MESHES_PER_ENTITY: usize = 10;
-
-fn meshesFromSlice(slice: []MaterialMesh) [MAX_MESHES_PER_ENTITY]MaterialMesh {
-    std.debug.assert(slice.len <= MAX_MESHES_PER_ENTITY);
-    var new: [MAX_MESHES_PER_ENTITY]MaterialMesh = undefined;
-    @memset(&new, null);
-    for (slice, new) |v, *p| {
-        p.* = v;
-    }
-    return new;
-}
 
 pub const Ecs = engine.ecs.Ecs(MAX_N_ENTITIES, MAX_N_SYSTEMS, state.State, &[_]engine.ecs.Component{
     // .{ "die", Die },

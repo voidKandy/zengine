@@ -28,7 +28,6 @@ pub const RotateD6System = game.Ecs.System(&[_]game.Ecs.ComponentsEnum{.bundle},
             .z = 0.5 * dt,
         });
 
-        // Only one entity, grab it
         const e = entities[0];
         const idx = myecs.entities.manager.index_map.get(e) orelse @panic("NO IDX?");
         std.log.warn("Got idx: {d}\n", .{idx});
@@ -111,17 +110,7 @@ pub fn main() !void {
 
     _ = d6_entity;
 
-    // {
-    //     var entity = try ecs.entities.register();
-    //     const material = try rl.loadMaterialDefault();
-    //     material.maps[0].texture = numbers_atlas_texture;
-    //     var bundle =
-    //         engine.MeshBundle.init(arena.allocator(), &[_]rl.Material{material}, rl.Matrix.identity());
-    //     try bundle.add(rl.genMeshCube(5.0, 5.0, 5.0), 0);
-    //     try entity.addComponent(.bundle, &bundle);
-    // }
-    while (!rl.windowShouldClose()) // Detect window close button or ESC key
-    {
+    while (!rl.windowShouldClose()) {
         try ecs.runSystems(&state);
         rl.beginDrawing();
         rl.clearBackground(rl.Color.black);
@@ -132,25 +121,10 @@ pub fn main() !void {
             rl.beginMode3D(state.camera);
             defer rl.endMode3D();
 
-            // for (state.physics.debug.lines.items) |line| {
-            // }
-
             rl.drawGrid(10, 1.0);
             for (0..ecs.entities.manager.count) |idx| {
                 if (ecs.components.access(engine.MeshBundle, .bundle, idx)) |access_bundle| {
-                    // In order to ensure meshes are drawn in the order they were inserted, we iterate through their indices
-                    for (0..access_bundle.meshes.items.len) |mesh_idx| {
-                        const mat_idx = access_bundle.mesh_material_map.get(mesh_idx) orelse @panic("MESH DOESN'T HAVE MATERIAL??");
-                        warn(
-                            \\ Rendering Mesh {}
-                            \\ With Material {}
-                            \\
-                        , .{ mesh_idx, mat_idx });
-
-                        const mesh = access_bundle.meshes.items[mesh_idx];
-                        const mat = access_bundle.materials[mat_idx];
-                        mesh.draw(mat, access_bundle.transform);
-                    }
+                    access_bundle.draw();
                 }
             }
         }

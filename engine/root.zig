@@ -44,4 +44,21 @@ pub const MeshBundle = struct {
         try self.meshes.append(mesh);
         try self.mesh_material_map.put(idx, material_idx);
     }
+
+    pub fn draw(self: Self) void {
+        // In order to ensure meshes are drawn in the order they were inserted
+        // we iterate through their indices
+        for (0..self.meshes.items.len) |mesh_idx| {
+            const mat_idx = self.mesh_material_map.get(mesh_idx) orelse @panic("MESH DOESN'T HAVE MATERIAL??");
+            std.log.warn(
+                \\ Rendering Mesh {}
+                \\ With Material {}
+                \\
+            , .{ mesh_idx, mat_idx });
+
+            const mesh = self.meshes.items[mesh_idx];
+            const mat = self.materials[mat_idx];
+            mesh.draw(mat, self.transform);
+        }
+    }
 };
