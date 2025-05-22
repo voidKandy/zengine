@@ -1,4 +1,5 @@
 const std = @import("std");
+const zm = @import("zmath");
 const rl = @import("raylib");
 const zbt = @import("zbullet");
 const game = @import("root.zig");
@@ -182,28 +183,43 @@ pub const SyncPhysicsSystem = Ecs.System(&[_]Ecs.ComponentsEnum{ .bundle, .body 
                 , .{});
                 continue;
             };
-            // std.log.warn("DRAWING: {}\n", .{e});
 
             const body = state.physics.world.getBody(body_id.*);
 
-            var transform: [12]f32 = undefined;
-            body.getGraphicsWorldTransform(&transform);
-
-            bundle.*.transform.m0 = transform[0];
-            bundle.*.transform.m4 = transform[1];
-            bundle.*.transform.m8 = transform[2];
-
-            bundle.*.transform.m1 = transform[3];
-            bundle.*.transform.m5 = transform[4];
-            bundle.*.transform.m9 = transform[5];
-
-            bundle.*.transform.m2 = transform[6];
-            bundle.*.transform.m6 = transform[7];
-            bundle.*.transform.m10 = transform[8];
-
-            bundle.*.transform.m12 = transform[9];
-            bundle.*.transform.m13 = transform[10];
-            bundle.*.transform.m14 = transform[11];
+            const transform = object_to_world: {
+                var transform: [12]f32 = undefined;
+                body.getGraphicsWorldTransform(&transform);
+                break :object_to_world zm.loadMat43(transform[0..]);
+            };
+            for (transform, 0..) |row, i| {
+                switch (i) {
+                    0 => {
+                        bundle.*.transform.m0 = row[0];
+                        bundle.*.transform.m1 = row[1];
+                        bundle.*.transform.m2 = row[2];
+                        bundle.*.transform.m3 = row[3];
+                    },
+                    1 => {
+                        bundle.*.transform.m4 = row[0];
+                        bundle.*.transform.m5 = row[1];
+                        bundle.*.transform.m6 = row[2];
+                        bundle.*.transform.m7 = row[3];
+                    },
+                    2 => {
+                        bundle.*.transform.m8 = row[0];
+                        bundle.*.transform.m9 = row[1];
+                        bundle.*.transform.m10 = row[2];
+                        bundle.*.transform.m11 = row[3];
+                    },
+                    3 => {
+                        bundle.*.transform.m12 = row[0];
+                        bundle.*.transform.m13 = row[1];
+                        bundle.*.transform.m14 = row[2];
+                        bundle.*.transform.m15 = row[3];
+                    },
+                    else => @panic("SHOULD ONLY HAVE 4 ROWS"),
+                }
+            }
         }
     }
 }.run);
