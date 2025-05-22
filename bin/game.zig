@@ -51,7 +51,7 @@ fn draw(myecs: *Ecs, state: *game.state.State) void {
         }
     }
 
-    // rl.drawGrid(200, 5.0);
+    rl.drawGrid(200, 5.0);
 
     {
         const lines = state.physics.debug.lines.items;

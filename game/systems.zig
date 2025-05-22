@@ -81,20 +81,51 @@ pub const CameraTrackingSystem = Ecs.System(&[_]Ecs.ComponentsEnum{ .camera_trac
                 const up = rl.Vector3{ .x = 0, .y = 1, .z = 0 };
                 var max_dot: f32 = -1.0;
                 var best_idx: usize = 0;
+                var world_axis, const world_angle = engine.util.extractAxisAngle(transform);
+                world_axis = world_axis.normalize();
+                const cos_theta = @cos(world_angle);
+                const sin_theta = @sin(world_angle);
+                // Normals are in *model space*, which just means that they are not transformed based on the transform of the mesh.
+                // So, we need to change the normals based on the rotation of the mesh
                 for (bundle.meshes.items[1..], 1..) |mesh, i| {
-                    const normal = rl.Vector3{
-                        .x = mesh.normals[0],
-                        .y = mesh.normals[1],
-                        .z = mesh.normals[2],
+                    const adjusted_normal = blk: {
+                        const normal = rl.Vector3{
+                            .x = mesh.normals[0],
+                            .y = mesh.normals[1],
+                            .z = mesh.normals[2],
+                        };
+
+                        const cross = rl.Vector3{
+                            .x = world_axis.y * normal.z - world_axis.z * normal.y,
+                            .y = world_axis.z * normal.x - world_axis.x * normal.z,
+                            .z = world_axis.x * normal.y - world_axis.y * normal.x,
+                        };
+
+                        const dot = world_axis.dotProduct(normal);
+
+                        const adjusted =
+                            rl.Vector3{
+                                .x = normal.x * cos_theta + cross.x * sin_theta + world_axis.x * dot * (1.0 - cos_theta),
+                                .y = normal.y * cos_theta + cross.y * sin_theta + world_axis.y * dot * (1.0 - cos_theta),
+                                .z = normal.z * cos_theta + cross.z * sin_theta + world_axis.z * dot * (1.0 - cos_theta),
+                            };
+
+                        break :blk adjusted.normalize();
                     };
 
                     std.log.warn(
                         \\ Checking mesh: {}
-                        \\ Got Normals: {any}
                         \\
-                    , .{ i, mesh.normals.* });
+                    , .{
+                        i,
+                    });
 
-                    const dot = normal.dotProduct(up);
+                    std.log.warn(
+                        \\ NORM:  {}
+                        \\
+                    , .{adjusted_normal});
+
+                    const dot = adjusted_normal.dotProduct(up);
 
                     if (dot > max_dot) {
                         max_dot = dot;
@@ -104,8 +135,13 @@ pub const CameraTrackingSystem = Ecs.System(&[_]Ecs.ComponentsEnum{ .camera_trac
 
                 break :face_up best_idx;
             };
+            std.log.warn(
+                \\ BEST INDEX: {}
+                \\
+            , .{face_up});
 
-            state.upward_face = game.dice.DieType.six.faceIdxToValue(face_up);
+            state.upward_face = game.dice.DieType.six.faceIdxToValue(face_up - 1);
+            // state.physics.world.getGravity(gravity: *[3]f32)
             const direction = rl.Vector3.normalize(rl.Vector3.subtract(state.camera.target, state.camera.position));
             const ray_from = [3]f32{
                 state.camera.position.x,
