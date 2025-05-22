@@ -92,19 +92,19 @@ pub fn main() !void {
         d6_world_transform.m14 -= 0.5;
 
         const d6_inner_mesh = rl.genMeshCube(d6_size, d6_size, d6_size);
-        const d6_faces = game.dice.genD6Faces(d6_size * 1.01);
+        const d6_faces = try game.dice.genD6Faces(ecs.allocator, d6_size * 1.01);
 
         var d6_face_material = try rl.loadMaterialDefault();
         d6_face_material.maps[0].texture = numbers_atlas_texture;
 
         var entity = try ecs.entities.register();
         var d6_bundle =
-            engine.MeshBundle.init(arena.allocator(), &[_]rl.Material{ d6_inner_material, d6_face_material }, d6_world_transform);
+            engine.MeshBundle.init(ecs.allocator, &[_]rl.Material{ d6_inner_material, d6_face_material }, d6_world_transform);
         try d6_bundle.add(d6_inner_mesh, 0);
         for (d6_faces) |mesh| {
             try d6_bundle.add(mesh, 1);
         }
-        try entity.addComponent(.bundle, &d6_bundle);
+        try entity.addComponent(.bundle, d6_bundle);
         break :blk entity;
     };
 

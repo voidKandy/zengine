@@ -95,14 +95,14 @@ fn createRoom(ecs: *Ecs, state: *game.state.State, size: f32) !struct {
     const transform = rl.Matrix.multiply(rl.Matrix.identity(), rl.Matrix.translate(0.0, y_pos, 0.0));
     var bundle = engine.MeshBundle.init(ecs.allocator, &[_]rl.Material{material}, transform);
     try bundle.add(mesh, 0);
-    try handle.addComponent(.bundle, &bundle);
+    try handle.addComponent(.bundle, bundle);
 
     const shape = floor_shape.asShape();
     const body = engine.util.transformMassShapeToBody(transform, 0.0, shape);
     body.setRestitution(1.0);
     const body_id = state.physics.world.getNumBodies();
     state.physics.world.addBody(body);
-    try handle.addComponent(.body, &body_id);
+    try handle.addComponent(.body, body_id);
 
     return .{
         .floor_shape = floor_shape.asShape(),
@@ -185,14 +185,14 @@ pub fn main() anyerror!void {
         const transform = rl.Matrix.multiply(rl.Matrix.identity(), rl.Matrix.translate(0.0, y_pos, 0.0));
         var bundle = engine.MeshBundle.init(ecs.allocator, &[_]rl.Material{material}, transform);
         try bundle.add(mesh, 0);
-        try handle.addComponent(.bundle, &bundle);
+        try handle.addComponent(.bundle, bundle);
 
         const shape = floor_shape.asShape();
         const body = engine.util.transformMassShapeToBody(transform, 0.0, shape);
         body.setRestitution(1.0);
         const body_id = state.physics.world.getNumBodies();
         state.physics.world.addBody(body);
-        try handle.addComponent(.body, &body_id);
+        try handle.addComponent(.body, body_id);
     }
 
     // I believe this shape needs to be *half* the size of the mesh??
@@ -227,14 +227,14 @@ pub fn main() anyerror!void {
         var bundle = engine.MeshBundle.init(ecs.allocator, &[_]rl.Material{ inner_material, face_material }, transform);
 
         const inner_mesh = rl.genMeshCube(d6_size, d6_size, d6_size);
-        const faces = game.dice.genD6Faces(d6_size * 1.01);
+        const faces = try game.dice.genD6Faces(ecs.allocator, d6_size * 1.01);
 
         try bundle.add(inner_mesh, 0);
         for (faces) |mesh| {
             try bundle.add(mesh, 1);
         }
 
-        try handle.addComponent(.bundle, &bundle);
+        try handle.addComponent(.bundle, bundle);
 
         const shape = d6shape.asShape();
         const mass: f32 = 2.0;
@@ -256,8 +256,8 @@ pub fn main() anyerror!void {
 
         const body_id = state.physics.world.getNumBodies();
         state.physics.world.addBody(body);
-        try handle.addComponent(.body, &body_id);
-        try handle.addComponent(.camera_track, &true);
+        try handle.addComponent(.body, body_id);
+        try handle.addComponent(.camera_track, true);
     }
 
     // Main game loop

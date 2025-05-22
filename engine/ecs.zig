@@ -335,13 +335,23 @@ pub fn Ecs(
                     }
                 }
 
-                /// expects to be passed `*T` for `component`
+                /// expects to be passed `T` for `component`
                 /// **NEVER** use multiple allocators for a single instance
                 pub fn insert(self: *@This(), allocator: Allocator, which: Enum, idx: usize, component: anytype) Error!void {
+                    switch (@typeInfo(@TypeOf(component))) {
+                        .pointer => {
+                            std.log.err(
+                                \\ Cannot Pass Pointer types to this function
+                                \\
+                            , .{});
+                            return error.InvalidType;
+                        },
+                        else => {},
+                    }
                     inline for (TypeArr, 0..) |T, i| {
-                        if (i == @intFromEnum(which) and @TypeOf(component.*) == T) {
+                        if (i == @intFromEnum(which) and @TypeOf(component) == T) {
                             const val_ptr = try allocator.create(T);
-                            val_ptr.* = component.*;
+                            val_ptr.* = component;
                             self.arrays[@intFromEnum(which)][idx] = val_ptr;
                             return;
                         }
@@ -371,7 +381,6 @@ pub fn Ecs(
                 }
 
                 pub fn access(self: *@This(), T: type, which: Enum, idx: usize) ?*T {
-                    // std.log.warn("ACCESSING ARRAY: {any}\n", .{self.arrays[@intFromEnum(which)]});
                     const ptr = self.arrays[@intFromEnum(which)][idx] orelse return null;
                     if (@intFromPtr(ptr) % @alignOf(T) != 0) {
                         @panic("Misaligned pointer access in ECS component store");
@@ -602,19 +611,19 @@ test "ECS Entity Management" {
     // ---
     const entity_a: MyEcs.EntityManager.EntityHandle = a: {
         var handle = try ecs.entities.register();
-        var someother: u32 = 5;
-        try handle.addComponent(MyEcs.ComponentsEnum.someothercomponent, &someother);
-        var some: bool = false;
-        try handle.addComponent(MyEcs.ComponentsEnum.somecomponent, &some);
+        const someother: u32 = 5;
+        try handle.addComponent(MyEcs.ComponentsEnum.someothercomponent, someother);
+        const some: bool = false;
+        try handle.addComponent(MyEcs.ComponentsEnum.somecomponent, some);
         break :a handle;
     };
 
     const entity_b: MyEcs.EntityManager.EntityHandle = a: {
         var handle = try ecs.entities.register();
-        var someother: u32 = 7;
-        try handle.addComponent(MyEcs.ComponentsEnum.someothercomponent, &someother);
-        var some: bool = true;
-        try handle.addComponent(MyEcs.ComponentsEnum.somecomponent, &some);
+        const someother: u32 = 7;
+        try handle.addComponent(MyEcs.ComponentsEnum.someothercomponent, someother);
+        const some: bool = true;
+        try handle.addComponent(MyEcs.ComponentsEnum.somecomponent, some);
         break :a handle;
     };
 
@@ -677,8 +686,8 @@ test "ECS Entity Management" {
         try std.testing.expectEqual(2, ecs.entities.manager.index_map.get(entity_c.identifier));
 
         // adding component to `entity_c` to make sure the component data is moved as expected
-        var val: u8 = 64;
-        try entity_c.addComponent(.othercomponent, &val);
+        const val: u8 = 64;
+        try entity_c.addComponent(.othercomponent, val);
 
         try entity_a.destroy();
         try std.testing.expectEqual(0, ecs.entities.manager.index_map.get(entity_c.identifier));
@@ -698,8 +707,8 @@ test "ECS Entity Management" {
                 const idx = myecs.entities.manager.index_map.get(e) orelse @panic("ENTITY SHOULD HAVE AN INDEX?");
                 const v = myecs.components.access(u32, .someothercomponent, idx) orelse @panic("SHOULD HAVE THIS COMPONENT?");
                 warn("VAL: {}", .{v.*});
-                var new: u32 = 1111;
-                myecs.components.insert(myecs.allocator, .someothercomponent, idx, &new) catch @panic("FAILED TO INSERT COMPONENT");
+                const new: u32 = 1111;
+                myecs.components.insert(myecs.allocator, .someothercomponent, idx, new) catch @panic("FAILED TO INSERT COMPONENT");
                 // v.* = @as(u32, 1111);
             }
         }

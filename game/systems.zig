@@ -77,8 +77,35 @@ pub const CameraTrackingSystem = Ecs.System(&[_]Ecs.ComponentsEnum{ .camera_trac
         const body = state.physics.world.getBody(body_id.*);
 
         if (!body.isActive()) {
-            const face_up = game.dice.DieType.whichFaceUp(transform);
-            state.upward_face = face_up;
+            const face_up = face_up: {
+                const up = rl.Vector3{ .x = 0, .y = 1, .z = 0 };
+                var max_dot: f32 = -1.0;
+                var best_idx: usize = 0;
+                for (bundle.meshes.items[1..], 1..) |mesh, i| {
+                    const normal = rl.Vector3{
+                        .x = mesh.normals[0],
+                        .y = mesh.normals[1],
+                        .z = mesh.normals[2],
+                    };
+
+                    std.log.warn(
+                        \\ Checking mesh: {}
+                        \\ Got Normals: {any}
+                        \\
+                    , .{ i, mesh.normals.* });
+
+                    const dot = normal.dotProduct(up);
+
+                    if (dot > max_dot) {
+                        max_dot = dot;
+                        best_idx = i;
+                    }
+                }
+
+                break :face_up best_idx;
+            };
+
+            state.upward_face = game.dice.DieType.six.faceIdxToValue(face_up);
             const direction = rl.Vector3.normalize(rl.Vector3.subtract(state.camera.target, state.camera.position));
             const ray_from = [3]f32{
                 state.camera.position.x,

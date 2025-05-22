@@ -30,31 +30,17 @@ pub const DieType =
             }
         }
 
-        /// NEEDS TO BE GENERALIZED
-        pub fn whichFaceUp(transform: rl.Matrix) u32 {
-            // indices correspond with face values
-            const rotations = [_]rl.Matrix{
-                rl.Matrix.rotateX(-std.math.pi / 2.0),
-                rl.Matrix.rotateZ(std.math.pi / 2.0),
-                rl.Matrix.identity(),
-                rl.Matrix.rotateX(std.math.pi),
-                rl.Matrix.rotateZ(-std.math.pi / 2.0),
-                rl.Matrix.rotateX(std.math.pi / 2.0),
-            };
-
-            var best_index: usize = 0;
-            var best_error: f32 = std.math.inf(f32);
-
-            for (rotations, 0..) |expected, i| {
-                const diff = matrixError(expected, transform);
-                if (diff < best_error) {
-                    best_error = diff;
-                    best_index = i;
-                }
+        pub fn faceIdxToValue(self: @This(), idx: usize) u32 {
+            switch (self) {
+                .six => {
+                    // see `genD6Faces` for the order of these faces
+                    const arr = [_]u32{ 1, 6, 3, 4, 2, 5 };
+                    if (arr.len < idx) {
+                        @panic("INVALID INDEX PASSED!!");
+                    }
+                    return arr[idx];
+                },
             }
-
-            return @as(u32, @intCast(best_index + 1)); // Return 1-based face index
-
         }
         fn matrixError(a: rl.Matrix, b: rl.Matrix) f32 {
             var sum: f32 = 0.0;
@@ -69,8 +55,9 @@ pub const DieType =
     };
 
 pub fn genD6Faces(
+    allocator: std.mem.Allocator,
     size: f32,
-) [6]rl.Mesh {
+) std.mem.Allocator.Error![6]rl.Mesh {
     const halfsize = size / 2.0;
     const third: f32 = 1.0 / 3.0;
     const neg_halfsize = halfsize * -1.0;
@@ -139,7 +126,11 @@ pub fn genD6Faces(
 
     var meshes: [6]rl.Mesh = undefined;
     for (&meshes, faces_data) |*mesh, d| {
-        const vertices = [_]f32{
+        const vertices = try allocator.alloc(f32, 6 * 3);
+        const texcoords = try allocator.alloc(f32, 6 * 2);
+        const normals = try allocator.alloc(f32, 6 * 3);
+
+        @memcpy(vertices, &[_]f32{
             d.coords[0].vertex_coords[0], d.coords[0].vertex_coords[1], d.coords[0].vertex_coords[2],
             d.coords[1].vertex_coords[0], d.coords[1].vertex_coords[1], d.coords[1].vertex_coords[2],
             d.coords[2].vertex_coords[0], d.coords[2].vertex_coords[1], d.coords[2].vertex_coords[2],
@@ -147,9 +138,9 @@ pub fn genD6Faces(
             d.coords[0].vertex_coords[0], d.coords[0].vertex_coords[1], d.coords[0].vertex_coords[2],
             d.coords[2].vertex_coords[0], d.coords[2].vertex_coords[1], d.coords[2].vertex_coords[2],
             d.coords[3].vertex_coords[0], d.coords[3].vertex_coords[1], d.coords[3].vertex_coords[2],
-        };
+        });
 
-        const texcoords = [_]f32{
+        @memcpy(texcoords, &[_]f32{
             d.coords[0].tex_coords[0], d.coords[0].tex_coords[1],
             d.coords[1].tex_coords[0], d.coords[1].tex_coords[1],
             d.coords[2].tex_coords[0], d.coords[2].tex_coords[1],
@@ -157,9 +148,9 @@ pub fn genD6Faces(
             d.coords[0].tex_coords[0], d.coords[0].tex_coords[1],
             d.coords[2].tex_coords[0], d.coords[2].tex_coords[1],
             d.coords[3].tex_coords[0], d.coords[3].tex_coords[1],
-        };
+        });
 
-        const normals = [_]f32{
+        @memcpy(normals, &[_]f32{
             // repeat normal per vertex (6 total)
             d.normal[0], d.normal[1], d.normal[2],
             d.normal[0], d.normal[1], d.normal[2],
@@ -167,13 +158,13 @@ pub fn genD6Faces(
             d.normal[0], d.normal[1], d.normal[2],
             d.normal[0], d.normal[1], d.normal[2],
             d.normal[0], d.normal[1], d.normal[2],
-        };
+        });
         const newmesh = rl.Mesh{
             .vertexCount = 6,
             .triangleCount = 2,
-            .vertices = @constCast(@ptrCast(&vertices)),
-            .texcoords = @constCast(@ptrCast(&texcoords)),
-            .normals = @constCast(@ptrCast(&normals)),
+            .vertices = vertices.ptr,
+            .texcoords = texcoords.ptr,
+            .normals = normals.ptr,
             .texcoords2 = null,
             .tangents = null,
             .colors = null,
