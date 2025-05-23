@@ -51,6 +51,93 @@ fn interpolate(p0: Vector3, p1: Vector3, p2: Vector3, t: f32) Vector3 {
     };
 }
 
+const Polygon = struct {
+    position: Vector3,
+    vertices: []Vector3,
+
+    fn generatePolygon(
+        comptime N_VERTICES: usize,
+        rng: *std.Random.DefaultPrng,
+        center: rl.Vector2,
+        avg_radius: f32,
+        irregularity: f32,
+        spikiness: f32,
+    ) [N_VERTICES]rl.Vector2 {
+        if (irregularity < 0 or irregularity > 1)
+            @panic("Irregularity must be between 0 and 1.");
+        if (spikiness < 0 or spikiness > 1)
+            @panic("Spikiness must be between 0 and 1.");
+        var irr = irregularity;
+        var spik = spikiness;
+        irr *= 2 * std.math.pi / @as(f32, @floatFromInt(N_VERTICES));
+        spik *= avg_radius;
+        const angle_steps = randomAngleSteps(N_VERTICES, rng, irr);
+
+        var points: [N_VERTICES]rl.Vector2 = undefined;
+        var angle = rng.random().float(f32) * (2 * std.math.pi);
+
+        // last used is 0 if it was just created
+        // 1 if the last one used was `@"0"`
+        // 2 if the last one used was `0"1"`
+        var last_gauss: struct { vals: struct { f32, f32 }, last_used: u2 } = undefined;
+        for (&points, &angle_steps) |*p, *step| {
+            const sample = blk: {
+                while (true) {
+                    switch (last_gauss.last_used) {
+                        0 => {
+                            last_gauss.last_used += 1;
+                            break :blk last_gauss.vals.@"0";
+                        },
+                        1 => {
+                            last_gauss.last_used += 1;
+                            break :blk last_gauss.vals.@"0";
+                        },
+                        else => {
+                            last_gauss.vals = engine.noise.generateGaussianNoise(rng, avg_radius, spik);
+                            last_gauss.last_used = 0;
+                        },
+                    }
+                }
+            };
+
+            const radius: f32 = @min(@max(sample, 0.0), 1.2 * avg_radius);
+            // const radius: f32 = @min(@max(sample, 0.0), 2.0 * avg_radius);
+
+            // radius = clip(random.gauss(avg_radius, spikiness), 0, 2 * avg_radius);
+            const point = rl.Vector2.init(center.x + radius * @cos(angle), center.y + radius * @sin(angle));
+            p.* = point;
+            angle += step.*;
+        }
+        return points;
+    }
+
+    fn randomAngleSteps(comptime N_STEPS: usize, rng: *std.Random.DefaultPrng, irregularity: f32) [N_STEPS]f32 {
+        var angles: [N_STEPS]f32 = undefined;
+        const lower = (2.0 * std.math.pi / @as(f32, @floatFromInt(N_STEPS))) - irregularity;
+        const upper = (2.0 * std.math.pi / @as(f32, @floatFromInt(N_STEPS))) + irregularity;
+        var cumsum: f32 = 0.0;
+
+        for (&angles) |*a| {
+            const angle = blk: {
+                var f = rng.random().float(f32) * upper;
+                while (f < lower) {
+                    f = rng.random().float(f32) * upper;
+                }
+                break :blk f;
+            };
+
+            a.* = angle;
+            cumsum += angle;
+        }
+
+        cumsum /= (2 * std.math.pi);
+        for (&angles) |*a| {
+            a.* /= cumsum;
+        }
+        return angles;
+    }
+};
+
 const Plane = struct {
     position: Vector3,
     size: rl.Vector2,
@@ -109,90 +196,9 @@ const Plane = struct {
         rl.drawTriangle3D(corners[0], corners[2], corners[1], rl.Color.green);
         // Triangle 2: [0, 3, 2]
         rl.drawTriangle3D(corners[0], corners[3], corners[2], rl.Color.green);
-
-        // rl.drawRectanglePro(.{ .x = self.position.x, .y = self.position.y, .width = self.size.x, .height = self.size.y }, rl.Vector2.zero(), self.rotation, rl.Color.green);
     }
 };
 
-fn generatePolygon(
-    comptime N_VERTICES: usize,
-    rng: *std.Random.DefaultPrng,
-    center: rl.Vector2,
-    avg_radius: f32,
-    irregularity: f32,
-    spikiness: f32,
-) [N_VERTICES]rl.Vector2 {
-    if (irregularity < 0 or irregularity > 1)
-        @panic("Irregularity must be between 0 and 1.");
-    if (spikiness < 0 or spikiness > 1)
-        @panic("Spikiness must be between 0 and 1.");
-
-    irregularity *= 2 * std.math.pi / N_VERTICES;
-    spikiness *= avg_radius;
-    const angle_steps = randomAngleSteps(N_VERTICES, irregularity);
-
-    var points: [N_VERTICES]rl.Vector2 = undefined;
-    const angle = rng.random().float(f32) * (2 * std.math.pi);
-
-    // last used is 0 if it was just created
-    // 1 if the last one used was `@"0"`
-    // 2 if the last one used was `0"1"`
-    var last_gauss: struct { vals: struct { f32, f32 }, last_used: u2 } = undefined;
-    for (&points, &angle_steps) |*p, *step| {
-        const sample = blk: {
-            while (true) {
-                switch (last_gauss.used) {
-                    0 => {
-                        last_gauss += 1;
-                        break :blk last_gauss.vals.@"0";
-                    },
-                    1 => {
-                        last_gauss += 1;
-                        break :blk last_gauss.vals.@"0";
-                    },
-                    else => {
-                        last_gauss.vals = engine.noise.generateGaussianNoise(rng, avg_radius, spikiness);
-                        last_gauss.used = 0;
-                    },
-                }
-            }
-        };
-
-        const radius: f32 = @min(@max(sample, 0.0), 2.0 * avg_radius);
-
-        // radius = clip(random.gauss(avg_radius, spikiness), 0, 2 * avg_radius);
-        const point = rl.Vector2.init(center.x + radius * @cos(angle), center.y + radius * @sin(angle));
-        p.* = point;
-        angle += step.*;
-    }
-    return points;
-}
-
-fn randomAngleSteps(comptime N_STEPS: usize, rng: *std.Random.DefaultPrng, irregularity: f32) [N_STEPS]f32 {
-    var angles: [N_STEPS]f32 = undefined;
-    const lower = (2.0 * std.math.pi / N_STEPS) - irregularity;
-    const upper = (2.0 * std.math.pi / N_STEPS) + irregularity;
-    var cumsum: f32 = 0.0;
-
-    for (&angles) |*a| {
-        const angle = blk: {
-            const f = rng.random().float(f32) * upper;
-            while (f < lower) {
-                f = rng.random().float(f32) * upper;
-            }
-            break :blk f;
-        };
-
-        a.* = angle;
-        cumsum += angle;
-    }
-
-    cumsum /= (2 * std.math.pi);
-    for (&angles) |*a| {
-        a.* /= cumsum;
-    }
-    return angles;
-}
 /// Returns an array of exactly A planes, positioned randomly along a Bezier curve
 fn randomPlanes(comptime A: usize, rng: *std.Random.DefaultPrng, curve: Curve3D) [A]Plane {
     var result: [A]Plane = undefined;
@@ -208,6 +214,33 @@ fn randomPlanes(comptime A: usize, rng: *std.Random.DefaultPrng, curve: Curve3D)
         const angle = rng.random().float(f32) * 90.0;
 
         result[i] = .{ .position = pos, .size = size, .axis = axis, .angle = angle };
+    }
+
+    return result;
+}
+
+const Poly = struct { rl.Vector3, [5]rl.Vector2 };
+
+fn randomPolies(comptime A: usize, rng: *std.Random.DefaultPrng, curve: Curve3D) [A]Poly {
+    var result: [A]Poly = undefined;
+
+    for (0..A) |i| {
+        const t = rng.random().float(f32); // random t in [0,1]
+        const pos = interpolate(curve.start, curve.control, curve.end, t);
+
+        // const size = rl.Vector2.init(rng.random().float(f32) * 2.0 + 0.5, // width: 0.5–2.5
+        //     rng.random().float(f32) * 2.0 + 0.5 // height: 0.5–2.5
+        // );
+        // const axis = rl.Vector3.init(0.0, rng.random().float(f32) * 2.0 + 0.5, 0.0);
+        // const angle = rng.random().float(f32) * 90.0;
+        const center =
+            rl.Vector2.init(pos.x, pos.z);
+        const poly = Polygon.generatePolygon(5, rng, center, 1, 0.3, 0.2);
+        result[i] = .{
+            pos,
+            poly,
+        };
+        // result[i] = .{ .position = pos, .size = size, .axis = axis, .angle = angle };
     }
 
     return result;
@@ -280,7 +313,8 @@ pub fn main() !void {
 
     const cameras = init_cameras();
     var curve = Curve3D.generate(&rng);
-    var planes = randomPlanes(5, &rng, curve);
+    // var planes = randomPlanes(5, &rng, curve);
+    var polies = randomPolies(5, &rng, curve);
 
     const box_center = rl.Vector3.init(
         (BOX_MIN + BOX_MAX) / 2.0,
@@ -296,7 +330,8 @@ pub fn main() !void {
     while (!rl.windowShouldClose()) {
         if (rl.isKeyPressed(rl.KeyboardKey.r)) {
             curve = Curve3D.generate(&rng);
-            planes = randomPlanes(5, &rng, curve);
+            // planes = randomPlanes(5, &rng, curve);
+            polies = randomPolies(5, &rng, curve);
         }
 
         if (rl.isKeyPressed(rl.KeyboardKey.p)) {
@@ -316,8 +351,21 @@ pub fn main() !void {
             }
             defer rl.endMode3D();
             curve.draw();
-            for (planes) |p| {
-                p.draw();
+            // for (planes) |p| {
+            // p.draw(&rng);
+            // }
+            for (polies) |p| {
+                const pos, const poly = p;
+                var i: usize = 0;
+                while (i < 5) : (i += 1) {
+                    const next_i = (i + 1) % 5;
+
+                    const v1 = rl.Vector3.init(poly[i].x, 0, poly[i].y);
+                    const v2 = rl.Vector3.init(poly[next_i].x, 0, poly[next_i].y);
+                    const center3d = rl.Vector3.init(pos.x, pos.y, pos.z); // base Y = 0
+
+                    rl.drawTriangle3D(center3d, v2, v1, rl.Color.green); // Fill triangle
+                }
             }
             rl.drawCubeWires(box_center, box_size.x, box_size.y, box_size.z, rl.Color.light_gray);
         }
