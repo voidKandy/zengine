@@ -2,6 +2,7 @@ const std = @import("std");
 const engine = @import("engine_core");
 const zbt = @import("zbullet");
 const rl = @import("raylib");
+const LineSegment = engine.util.LineSegment;
 const Vector3 = rl.Vector3;
 
 const screen_width = 800;
@@ -10,98 +11,6 @@ const screen_height = 600;
 const BOX_MIN: f32 = -5.0;
 const BOX_MAX: f32 = 5.0;
 
-/// Many of this binary should be moved to an `engine` module once it's working in a
-/// *relatively* straightforward way
-/// https://www.geeksforgeeks.org/check-if-two-given-line-segments-intersect/
-/// `Orientation` of an ordered triplet of points can be one of the following
-/// `cw` & `ccw` *should* be self explanatory
-/// **Collinear** just means the points do not create a cycle
-const Orientation = enum {
-    /// clockwise
-    cw,
-    /// counter-clockwise
-    ccw,
-    /// collinear
-    col,
-
-    /// function to find orientation of ordered triplet of points (p, q, r)
-    fn get(
-        p: rl.Vector2,
-        q: rl.Vector2,
-        r: rl.Vector2,
-    ) Orientation {
-        const val: f32 = (q.y - p.y) * (r.x - q.x) -
-            (q.x - p.x) * (r.y - q.y);
-
-        if (val == 0.0)
-            return .col;
-        if (val > 0.0)
-            return .cw;
-        return .ccw;
-    }
-};
-
-/// `start` and `end` are totally interchangable
-const LineSegment = struct {
-    start: rl.Vector2,
-    end: rl.Vector2,
-
-    /// Checks if point is on line segment
-    fn pointOn(self: @This(), point: rl.Vector2) bool {
-        return (point.x <= @max(self.start.x, self.end.x) and
-            point.x >= @min(self.start.x, self.end.x) and
-            point.y <= @max(self.start.y, self.end.y) and
-            point.y >= @min(self.start.y, self.end.y));
-    }
-
-    /// The idea is to use orientation of lines to determine whether they intersect or not. Two line segments [p1, q1] and [p2, q2] intersects if and only if one of the following two conditions is verified:
-    ///
-    /// 1. General Case:
-    ///
-    ///     [p1, q1, p2] and [p1, q1, q2] have different orientations.
-    ///     [p2, q2, p1] and [p2, q2, q1] have different orientations.
-    ///
-    /// 2. Special Case:
-    ///
-    ///     [p1, q1, p2], [p1, q1, q2], [p2, q2, p1], and [p2, q2, q1] are all collinear.
-    ///     The x-projections of [p1, q1] and [p2, q2] intersect.
-    ///     The y-projections of [p1, q1] and [p2, q2] intersect.
-    fn intersects(self: @This(), other: @This()) bool {
-
-        // find the four orientations needed
-        // for general and special cases
-        const o1 = Orientation.get(self.start, self.end, other.start);
-        const o2 = Orientation.get(self.start, self.end, other.end);
-        const o3 = Orientation.get(other.start, other.end, self.start);
-        const o4 = Orientation.get(other.start, other.end, self.end);
-
-        // general case
-        if (@intFromEnum(o1) != @intFromEnum(o2) and @intFromEnum(o3) != @intFromEnum(o4))
-            return true;
-
-        // special cases
-        // `self.start`, `self.end` and `other.start` are collinear and `other.start` is on `self`
-        if (o1 == .col and self.pointOn(other.start))
-            return true;
-
-        // `self.start`, `self.end` and `other.end` are collinear and `other.end` is on `self`
-        if (o2 == .col and self.pointOn(other.end))
-            return true;
-
-        // `other.start`, `other.end` and `self.start` are collinear and `self.start` is on `other`
-        if (o3 == .col and other.pointOn(self.start))
-            return true;
-
-        // p2, q2 and q1 are collinear and q1 lies on segment p2q2
-        // `other.start`, `other.end` and `self.end` are collinear and `self.end` is on `other`
-        if (o4 == .col and other.pointOn(self.end))
-            return true;
-
-        return false;
-    }
-};
-
-/// Line intersection utilities
 fn init_cameras() struct {
     perspective: rl.Camera3D,
     birds_eye: rl.Camera3D,
@@ -248,7 +157,7 @@ const Polygon = struct {
     }
 };
 
-const ALLOWED_FAILURES = 5;
+const ALLOWED_FAILURES = 500;
 fn randomPolies(alloc: std.mem.Allocator, n: usize, rng: *std.Random.DefaultPrng, curve: Curve3D) std.mem.Allocator.Error![]Polygon {
     var result = try alloc.alloc(Polygon, n);
 
@@ -271,7 +180,7 @@ fn randomPolies(alloc: std.mem.Allocator, n: usize, rng: *std.Random.DefaultPrng
             var k: usize = 0;
             while (k < verts.len and !intersects) : (k += 1) {
                 const a = verts[k];
-                const b = verts[(k + 1) % verts.len]; // wrap around
+                const b = verts[(k + 1) % verts.len];
                 const segment = LineSegment{
                     .start = rl.Vector2.init(a.x, a.z),
                     .end = rl.Vector2.init(b.x, b.z),
