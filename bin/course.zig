@@ -10,6 +10,98 @@ const screen_height = 600;
 const BOX_MIN: f32 = -5.0;
 const BOX_MAX: f32 = 5.0;
 
+/// Many of this binary should be moved to an `engine` module once it's working in a
+/// *relatively* straightforward way
+/// https://www.geeksforgeeks.org/check-if-two-given-line-segments-intersect/
+/// `Orientation` of an ordered triplet of points can be one of the following
+/// `cw` & `ccw` *should* be self explanatory
+/// **Collinear** just means the points do not create a cycle
+const Orientation = enum {
+    /// clockwise
+    cw,
+    /// counter-clockwise
+    ccw,
+    /// collinear
+    col,
+
+    /// function to find orientation of ordered triplet of points (p, q, r)
+    fn get(
+        p: rl.Vector2,
+        q: rl.Vector2,
+        r: rl.Vector2,
+    ) Orientation {
+        const val: f32 = (q.y - p.y) * (r.x - q.x) -
+            (q.x - p.x) * (r.y - q.y);
+
+        if (val == 0.0)
+            return .col;
+        if (val > 0.0)
+            return .cw;
+        return .ccw;
+    }
+};
+
+/// `start` and `end` are totally interchangable
+const LineSegment = struct {
+    start: rl.Vector2,
+    end: rl.Vector2,
+
+    /// Checks if point is on line segment
+    fn pointOn(self: @This(), point: rl.Vector2) bool {
+        return (point.x <= @max(self.start.x, self.end.x) and
+            point.x >= @min(self.start.x, self.end.x) and
+            point.y <= @max(self.start.y, self.end.y) and
+            point.y >= @min(self.start.y, self.end.y));
+    }
+
+    /// The idea is to use orientation of lines to determine whether they intersect or not. Two line segments [p1, q1] and [p2, q2] intersects if and only if one of the following two conditions is verified:
+    ///
+    /// 1. General Case:
+    ///
+    ///     [p1, q1, p2] and [p1, q1, q2] have different orientations.
+    ///     [p2, q2, p1] and [p2, q2, q1] have different orientations.
+    ///
+    /// 2. Special Case:
+    ///
+    ///     [p1, q1, p2], [p1, q1, q2], [p2, q2, p1], and [p2, q2, q1] are all collinear.
+    ///     The x-projections of [p1, q1] and [p2, q2] intersect.
+    ///     The y-projections of [p1, q1] and [p2, q2] intersect.
+    fn intersects(self: @This(), other: @This()) bool {
+
+        // find the four orientations needed
+        // for general and special cases
+        const o1 = Orientation.get(self.start, self.end, other.start);
+        const o2 = Orientation.get(self.start, self.end, other.end);
+        const o3 = Orientation.get(other.start, other.end, self.start);
+        const o4 = Orientation.get(other.start, other.end, self.end);
+
+        // general case
+        if (@intFromEnum(o1) != @intFromEnum(o2) and @intFromEnum(o3) != @intFromEnum(o4))
+            return true;
+
+        // special cases
+        // `self.start`, `self.end` and `other.start` are collinear and `other.start` is on `self`
+        if (o1 == .col and self.pointOn(other.start))
+            return true;
+
+        // `self.start`, `self.end` and `other.end` are collinear and `other.end` is on `self`
+        if (o2 == .col and self.pointOn(other.end))
+            return true;
+
+        // `other.start`, `other.end` and `self.start` are collinear and `self.start` is on `other`
+        if (o3 == .col and other.pointOn(self.start))
+            return true;
+
+        // p2, q2 and q1 are collinear and q1 lies on segment p2q2
+        // `other.start`, `other.end` and `self.end` are collinear and `self.end` is on `other`
+        if (o4 == .col and other.pointOn(self.end))
+            return true;
+
+        return false;
+    }
+};
+
+/// Line intersection utilities
 fn init_cameras() struct {
     perspective: rl.Camera3D,
     birds_eye: rl.Camera3D,
@@ -56,8 +148,6 @@ const Polygon = struct {
     vertices: []Vector3,
 
     fn draw(self: @This()) void {
-        // const center = centroid(p.vertices); // Use the actual center of the polygon
-
         var i: usize = 0;
         while (i < self.vertices.len) : (i += 1) {
             const next_i = (i + 1) % self.vertices.len;
@@ -65,6 +155,7 @@ const Polygon = struct {
             const v1 = self.vertices[i];
             const v2 = self.vertices[next_i];
 
+            rl.drawLine3D(v2, v1, rl.Color.orange);
             rl.drawTriangle3D(self.position, v2, v1, rl.Color.green);
         }
     }
@@ -157,15 +248,64 @@ const Polygon = struct {
     }
 };
 
+const ALLOWED_FAILURES = 5;
 fn randomPolies(alloc: std.mem.Allocator, n: usize, rng: *std.Random.DefaultPrng, curve: Curve3D) std.mem.Allocator.Error![]Polygon {
     var result = try alloc.alloc(Polygon, n);
 
     for (0..n) |i| {
         const t = @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(n - 1));
         const pos = interpolate(curve.start, curve.control, curve.end, t);
-        const amt_verts = rng.random().intRangeAtMost(usize, 3, 12);
+        var amt_verts: usize = undefined;
+        var verts: []rl.Vector3 = undefined;
+        var gen_failures: usize = 0;
 
-        const verts = try Polygon.generateVertices(alloc, amt_verts, pos, rng, 1, 0.5, 0.2);
+        gen_verts: while (true) {
+            amt_verts = rng.random().intRangeAtMost(usize, 3, 12);
+            verts = try Polygon.generateVertices(alloc, amt_verts, pos, rng, 1, 0.5, 0.2);
+
+            if (i == 0) break :gen_verts;
+
+            const prev_poly = result[i - 1];
+            var intersects = false;
+
+            var k: usize = 0;
+            while (k < verts.len and !intersects) : (k += 1) {
+                const a = verts[k];
+                const b = verts[(k + 1) % verts.len]; // wrap around
+                const segment = LineSegment{
+                    .start = rl.Vector2.init(a.x, a.z),
+                    .end = rl.Vector2.init(b.x, b.z),
+                };
+
+                var j: usize = 0;
+                while (j < prev_poly.vertices.len and !intersects) : (j += 1) {
+                    const c = prev_poly.vertices[j];
+                    const d = prev_poly.vertices[(j + 1) % prev_poly.vertices.len];
+                    const other_segment = LineSegment{
+                        .start = rl.Vector2.init(c.x, c.z),
+                        .end = rl.Vector2.init(d.x, d.z),
+                    };
+
+                    intersects = segment.intersects(other_segment);
+                }
+            }
+
+            if (!intersects or gen_failures >= ALLOWED_FAILURES) break :gen_verts;
+            gen_failures += 1;
+            alloc.free(verts);
+
+            std.log.warn(
+                \\ intersects, regenerating Polygon 
+                \\
+            , .{});
+        }
+
+        if (gen_failures >= ALLOWED_FAILURES)
+            std.log.warn("Failed too many times\n", .{});
+        std.log.warn(
+            \\ Polygon generated
+            \\
+        , .{});
 
         result[i] = Polygon{
             .position = pos,
@@ -243,8 +383,11 @@ pub fn main() !void {
 
     const cameras = init_cameras();
     var curve = Curve3D.generate(&rng);
-    // var planes = randomPlanes(5, &rng, curve);
-    var polies = try randomPolies(arena.allocator(), 5, &rng, curve);
+
+    var polies = blk: {
+        const amt_polies = rng.random().intRangeAtMost(usize, 3, 8);
+        break :blk try randomPolies(arena.allocator(), amt_polies, &rng, curve);
+    };
 
     const box_center = rl.Vector3.init(
         (BOX_MIN + BOX_MAX) / 2.0,
@@ -261,7 +404,10 @@ pub fn main() !void {
         if (rl.isKeyPressed(rl.KeyboardKey.r)) {
             curve = Curve3D.generate(&rng);
             // planes = randomPlanes(5, &rng, curve);
-            polies = try randomPolies(arena.allocator(), 5, &rng, curve);
+            polies = blk: {
+                const amt_polies = rng.random().intRangeAtMost(usize, 3, 8);
+                break :blk try randomPolies(arena.allocator(), amt_polies, &rng, curve);
+            };
         }
 
         if (rl.isKeyPressed(rl.KeyboardKey.p)) {
@@ -281,12 +427,8 @@ pub fn main() !void {
             }
             defer rl.endMode3D();
             curve.draw();
-            // for (planes) |p| {
-            // p.draw(&rng);
-            // }
             for (polies) |p| {
                 p.draw();
-                // const pos, const poly = p;
             }
             rl.drawCubeWires(box_center, box_size.x, box_size.y, box_size.z, rl.Color.light_gray);
         }
