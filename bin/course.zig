@@ -26,7 +26,7 @@ fn init_cameras() struct {
     }, .birds_eye = rl.Camera3D{
         .position = rl.Vector3.init(0.0, perspective_offset + 20.0, 0.0),
         .target = rl.Vector3.init(0.0, 0.0, 0.0),
-        .up = rl.Vector3.init(1.0, 0.0, 0.0),
+        .up = rl.Vector3.init(-1.0, 0.0, 0.0),
         .fovy = 45.0,
         .projection = rl.CameraProjection.perspective,
     } };
@@ -259,67 +259,82 @@ const Curve3D = struct {
 };
 
 fn renderHeightmapTexture(allocator: std.mem.Allocator, polygons: []Polygon) !void {
-    const size: usize = @intFromFloat(BOX_MAX - BOX_MIN);
+    // const size: usize = @intFromFloat(BOX_MAX - BOX_MIN);
+    const size: usize = 512;
     const tex = try rl.RenderTexture2D.init(size, size);
+    // var min_x = polygons[0].vertices[0].x;
+    // var max_x = min_x;
+    // var min_y = polygons[0].vertices[0].y;
+    // var max_y = min_y;
+
+    // for (polygons) |poly| {
+    //     for (poly.vertices) |v| {
+    //         min_x = @min(min_x, v.x);
+    //         max_x = @max(max_x, v.x);
+    //         min_y = @min(min_y, v.y);
+    //         max_y = @max(max_y, v.y);
+    //     }
+    // }
+
+    const range_x: f32 = BOX_MAX - BOX_MIN;
+    const range_y: f32 = BOX_MAX - BOX_MIN;
+    const padding: f32 = 10.0; // pixels of border around the shape
+    const scale_x: f32 = (size - 2.0 * padding) / range_x;
+    const scale_y: f32 = (size - 2.0 * padding) / range_y;
+    const scale: f32 = @min(scale_x, scale_y);
+
     {
         rl.beginTextureMode(tex);
         defer rl.endTextureMode();
         rl.clearBackground(rl.Color.black);
+        _ = allocator;
+        rl.drawText("TOP RIGHT", size - 70, 0, 10, rl.Color.white);
+        rl.drawText("TOP LEFT", 0, 0, 10, rl.Color.white);
+        rl.drawText("BOTTOM RIGHT", size - 90, size - 10, 10, rl.Color.white);
+        rl.drawText("BOTTOM LEFT", 0, size - 10, 10, rl.Color.white);
+
         for (polygons) |poly| {
-            // var i: usize = 0;
-            // while (i < poly.vertices.len) : (i += 1) {
-            //     const next_i = (i + 1) % poly.vertices.len;
+            var i: usize = 0;
+            while (i < poly.vertices.len) : (i += 1) {
+                const next_i = (i + 1) % poly.vertices.len;
 
-            //     const v1 = rl.Vector2{
-            //         .x = poly.vertices[i].x,
-            //         .y = poly.vertices[i].z,
-            //     };
-            //     const v2 = rl.Vector2{
-            //         .x = poly.vertices[next_i].x,
-            //         .y = poly.vertices[next_i].z,
-            //     };
-            //     rl.drawTriangle(rl.Vector2{
-            //         .x = poly.position.x,
-            //         .y = poly.position.z,
-            //     }, v2, v1, rl.Color.white);
-            // }
-            // _ = allocator;
+                const v1 =
+                    rl.Vector2{
+                        .x = (poly.vertices[i].x - BOX_MIN) * scale + padding,
+                        .y = (poly.vertices[i].z - BOX_MIN) * scale + padding,
+                    };
+                const v2 =
+                    rl.Vector2{
+                        .x = (poly.vertices[next_i].x - BOX_MIN) * scale + padding,
+                        .y = (poly.vertices[next_i].z - BOX_MIN) * scale + padding,
+                    };
 
-            const count = poly.vertices.len;
-            var screen_points = try allocator.alloc(rl.Vector2, count);
-            defer allocator.free(screen_points);
-
-            for (poly.vertices, 0..) |v, i| {
-                const u = (v.x - BOX_MIN) / @as(f32, @floatFromInt(size)); // normalize to 0..1
-                const v_ = (v.z - BOX_MIN) / @as(f32, @floatFromInt(size)); // use .z not .y
-
-                screen_points[i] = rl.Vector2{
-                    .x = u * @as(f32, @floatFromInt(size)),
-                    .y = v_ * @as(f32, @floatFromInt(size)),
-                };
-                // const norm = v.normalize();
-                // // Convert world coordinates to image space
-                // // Assuming Y-up world and you want to map it to 2D texture coordinates
-                // screen_points[i] = rl.Vector2{
-                //     .x = ((norm.x - BOX_MIN) * size) / (BOX_MAX - BOX_MIN),
-                //     .y = ((norm.z - BOX_MIN) * size) / (BOX_MAX - BOX_MIN),
-                // };
+                rl.drawLine(@as(i32, @intFromFloat(v1.x)), @as(i32, @intFromFloat(v1.y)), @as(i32, @intFromFloat(v2.x)), @as(i32, @intFromFloat(v2.y)), rl.Color.red);
             }
 
-            // Draw polygon filled with white
-            rl.drawTriangleFan(screen_points, rl.Color.white);
+            // for (poly.edges()) |edge| {
+            //     const p1 = toTexCoord.map(edge.start);
+            //     const p2 = toTexCoord.map(edge.end);
+            //     rl.drawLine(@intFromFloat(p1.x), @intFromFloat(p1.y), @intFromFloat(p2.x), @intFromFloat(p2.y), rl.Color.red);
+            // }
         }
+
+        //     // Draw polygon filled with white
+        //     rl.drawTriangleFan(screen_points, rl.Color.white);
+        // }
     }
 
-    // Step 4: Extract image from render texture
     rl.drawTextureRec(
         tex.texture,
-        rl.Rectangle{ .x = 0.0, .y = 0.0, .width = size, .height = size }, // flipped Y
-        rl.Vector2{ .x = 100, .y = 100 },
+        rl.Rectangle{
+            .x = 0.0,
+            .y = 0.0,
+            .width = @as(f32, @floatFromInt(size)),
+            .height = -@as(f32, @floatFromInt(size)), // flip vertically
+        },
+        rl.Vector2{ .x = 0, .y = 0 },
         rl.Color.white,
     );
-    // rl.Image.fromScreen()
-
 }
 
 pub fn main() !void {
