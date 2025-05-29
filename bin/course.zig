@@ -8,21 +8,23 @@ const Vector3 = rl.Vector3;
 const screen_width = 800;
 const screen_height = 600;
 
-const BOX_MIN: f32 = -5.0;
-const BOX_MAX: f32 = 5.0;
+const BOX_MIN: f32 = -16.0;
+const BOX_MAX: f32 = 16.0;
 
 fn init_cameras() struct {
     perspective: rl.Camera3D,
     birds_eye: rl.Camera3D,
 } {
+    const perspective_offset =
+        BOX_MAX * 2.2;
     return .{ .perspective = rl.Camera{
-        .position = rl.Vector3.init(10.0, 10.0, 10.0),
+        .position = rl.Vector3.init(perspective_offset, perspective_offset, perspective_offset),
         .target = rl.Vector3.init(0.0, 0.0, 0.0),
         .up = rl.Vector3.init(0.0, 1.0, 0.0),
         .fovy = 45.0,
         .projection = rl.CameraProjection.perspective,
     }, .birds_eye = rl.Camera3D{
-        .position = rl.Vector3.init(0.0, 12.0, 0.0),
+        .position = rl.Vector3.init(0.0, perspective_offset + 20.0, 0.0),
         .target = rl.Vector3.init(0.0, 0.0, 0.0),
         .up = rl.Vector3.init(1.0, 0.0, 0.0),
         .fovy = 45.0,
@@ -256,6 +258,70 @@ const Curve3D = struct {
     }
 };
 
+fn renderHeightmapTexture(allocator: std.mem.Allocator, polygons: []Polygon) !void {
+    const size: usize = @intFromFloat(BOX_MAX - BOX_MIN);
+    const tex = try rl.RenderTexture2D.init(size, size);
+    {
+        rl.beginTextureMode(tex);
+        defer rl.endTextureMode();
+        rl.clearBackground(rl.Color.black);
+        for (polygons) |poly| {
+            // var i: usize = 0;
+            // while (i < poly.vertices.len) : (i += 1) {
+            //     const next_i = (i + 1) % poly.vertices.len;
+
+            //     const v1 = rl.Vector2{
+            //         .x = poly.vertices[i].x,
+            //         .y = poly.vertices[i].z,
+            //     };
+            //     const v2 = rl.Vector2{
+            //         .x = poly.vertices[next_i].x,
+            //         .y = poly.vertices[next_i].z,
+            //     };
+            //     rl.drawTriangle(rl.Vector2{
+            //         .x = poly.position.x,
+            //         .y = poly.position.z,
+            //     }, v2, v1, rl.Color.white);
+            // }
+            // _ = allocator;
+
+            const count = poly.vertices.len;
+            var screen_points = try allocator.alloc(rl.Vector2, count);
+            defer allocator.free(screen_points);
+
+            for (poly.vertices, 0..) |v, i| {
+                const u = (v.x - BOX_MIN) / @as(f32, @floatFromInt(size)); // normalize to 0..1
+                const v_ = (v.z - BOX_MIN) / @as(f32, @floatFromInt(size)); // use .z not .y
+
+                screen_points[i] = rl.Vector2{
+                    .x = u * @as(f32, @floatFromInt(size)),
+                    .y = v_ * @as(f32, @floatFromInt(size)),
+                };
+                // const norm = v.normalize();
+                // // Convert world coordinates to image space
+                // // Assuming Y-up world and you want to map it to 2D texture coordinates
+                // screen_points[i] = rl.Vector2{
+                //     .x = ((norm.x - BOX_MIN) * size) / (BOX_MAX - BOX_MIN),
+                //     .y = ((norm.z - BOX_MIN) * size) / (BOX_MAX - BOX_MIN),
+                // };
+            }
+
+            // Draw polygon filled with white
+            rl.drawTriangleFan(screen_points, rl.Color.white);
+        }
+    }
+
+    // Step 4: Extract image from render texture
+    rl.drawTextureRec(
+        tex.texture,
+        rl.Rectangle{ .x = 0.0, .y = 0.0, .width = size, .height = size }, // flipped Y
+        rl.Vector2{ .x = 100, .y = 100 },
+        rl.Color.white,
+    );
+    // rl.Image.fromScreen()
+
+}
+
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
@@ -297,6 +363,8 @@ pub fn main() !void {
         const amt_polies = rng.random().intRangeAtMost(usize, 3, 8);
         break :blk try randomPolies(arena.allocator(), amt_polies, &rng, curve);
     };
+    // var heightmap_tex = try heightmapTexture(arena.allocator(), polies);
+    var is_heightmap = false;
 
     const box_center = rl.Vector3.init(
         (BOX_MIN + BOX_MAX) / 2.0,
@@ -310,6 +378,11 @@ pub fn main() !void {
     );
 
     while (!rl.windowShouldClose()) {
+        // BAD
+        // Statemachine needed!
+        if (rl.isKeyPressed(rl.KeyboardKey.h)) {
+            is_heightmap = !is_heightmap;
+        }
         if (rl.isKeyPressed(rl.KeyboardKey.r)) {
             curve = Curve3D.generate(&rng);
             // planes = randomPlanes(5, &rng, curve);
@@ -327,22 +400,27 @@ pub fn main() !void {
         }
         rl.beginDrawing();
         defer rl.endDrawing();
-        rl.clearBackground(rl.Color.dark_gray);
+        if (is_heightmap) {
+            rl.clearBackground(rl.Color.dark_gray);
 
-        {
-            switch (current_camera) {
-                .perspective => rl.beginMode3D(cameras.perspective),
-                .birds_eye => rl.beginMode3D(cameras.birds_eye),
+            {
+                switch (current_camera) {
+                    .perspective => rl.beginMode3D(cameras.perspective),
+                    .birds_eye => rl.beginMode3D(cameras.birds_eye),
+                }
+                defer rl.endMode3D();
+                curve.draw();
+                for (polies) |p| {
+                    p.draw();
+                }
+                rl.drawCubeWires(box_center, box_size.x, box_size.y, box_size.z, rl.Color.light_gray);
             }
-            defer rl.endMode3D();
-            curve.draw();
-            for (polies) |p| {
-                p.draw();
-            }
-            rl.drawCubeWires(box_center, box_size.x, box_size.y, box_size.z, rl.Color.light_gray);
+
+            rl.drawText("Press [R] to regenerate line", 10, 10, 20, rl.Color.white);
+            rl.drawText("Press [P] to change camera", 10, 40, 20, rl.Color.white);
+        } else {
+            rl.clearBackground(rl.Color.black);
+            try renderHeightmapTexture(arena.allocator(), polies);
         }
-
-        rl.drawText("Press [R] to regenerate line", 10, 10, 20, rl.Color.white);
-        rl.drawText("Press [P] to change camera", 10, 40, 20, rl.Color.white);
     }
 }
