@@ -26,7 +26,7 @@ fn init_cameras() struct {
     }, .birds_eye = rl.Camera3D{
         .position = rl.Vector3.init(0.0, perspective_offset + 20.0, 0.0),
         .target = rl.Vector3.init(0.0, 0.0, 0.0),
-        .up = rl.Vector3.init(-1.0, 0.0, 0.0),
+        .up = rl.Vector3.init(1.0, 0.0, 0.0),
         .fovy = 45.0,
         .projection = rl.CameraProjection.perspective,
     } };
@@ -259,22 +259,8 @@ const Curve3D = struct {
 };
 
 fn renderHeightmapTexture(allocator: std.mem.Allocator, polygons: []Polygon) !void {
-    // const size: usize = @intFromFloat(BOX_MAX - BOX_MIN);
     const size: usize = 512;
     const tex = try rl.RenderTexture2D.init(size, size);
-    // var min_x = polygons[0].vertices[0].x;
-    // var max_x = min_x;
-    // var min_y = polygons[0].vertices[0].y;
-    // var max_y = min_y;
-
-    // for (polygons) |poly| {
-    //     for (poly.vertices) |v| {
-    //         min_x = @min(min_x, v.x);
-    //         max_x = @max(max_x, v.x);
-    //         min_y = @min(min_y, v.y);
-    //         max_y = @max(max_y, v.y);
-    //     }
-    // }
 
     const range_x: f32 = BOX_MAX - BOX_MIN;
     const range_y: f32 = BOX_MAX - BOX_MIN;
@@ -287,41 +273,42 @@ fn renderHeightmapTexture(allocator: std.mem.Allocator, polygons: []Polygon) !vo
         rl.beginTextureMode(tex);
         defer rl.endTextureMode();
         rl.clearBackground(rl.Color.black);
-        _ = allocator;
         rl.drawText("TOP RIGHT", size - 70, 0, 10, rl.Color.white);
         rl.drawText("TOP LEFT", 0, 0, 10, rl.Color.white);
         rl.drawText("BOTTOM RIGHT", size - 90, size - 10, 10, rl.Color.white);
         rl.drawText("BOTTOM LEFT", 0, size - 10, 10, rl.Color.white);
 
         for (polygons) |poly| {
-            var i: usize = 0;
-            while (i < poly.vertices.len) : (i += 1) {
-                const next_i = (i + 1) % poly.vertices.len;
+            const vert_count = poly.vertices.len;
+            std.debug.assert(vert_count >= 3);
+            const screen_vertices = try allocator.alloc(rl.Vector2, vert_count + 2); // +1 for center, +1 to close loop
+            defer allocator.free(screen_vertices);
 
-                const v1 =
-                    rl.Vector2{
-                        .x = (poly.vertices[i].x - BOX_MIN) * scale + padding,
-                        .y = (poly.vertices[i].z - BOX_MIN) * scale + padding,
-                    };
-                const v2 =
-                    rl.Vector2{
-                        .x = (poly.vertices[next_i].x - BOX_MIN) * scale + padding,
-                        .y = (poly.vertices[next_i].z - BOX_MIN) * scale + padding,
-                    };
+            // Center point of fan (convert to image space)
+            screen_vertices[0] = rl.Vector2{
+                .x = (poly.position.x - BOX_MIN) * scale + padding,
+                .y = size - ((poly.position.z - BOX_MIN) * scale + padding), // flip Y
+            };
 
-                rl.drawLine(@as(i32, @intFromFloat(v1.x)), @as(i32, @intFromFloat(v1.y)), @as(i32, @intFromFloat(v2.x)), @as(i32, @intFromFloat(v2.y)), rl.Color.red);
+            // Add polygon points in order
+            for (poly.vertices, 0..) |v, i| {
+                screen_vertices[i + 1] = rl.Vector2{
+                    .x = (v.x - BOX_MIN) * scale + padding,
+                    .y = size - ((v.z - BOX_MIN) * scale + padding),
+                };
             }
 
-            // for (poly.edges()) |edge| {
-            //     const p1 = toTexCoord.map(edge.start);
-            //     const p2 = toTexCoord.map(edge.end);
-            //     rl.drawLine(@intFromFloat(p1.x), @intFromFloat(p1.y), @intFromFloat(p2.x), @intFromFloat(p2.y), rl.Color.red);
-            // }
-        }
+            // Close the fan loop (optional, Raylib may not need this depending on API version)
+            screen_vertices[vert_count + 1] = screen_vertices[1];
 
-        //     // Draw polygon filled with white
-        //     rl.drawTriangleFan(screen_points, rl.Color.white);
-        // }
+            rl.drawTriangleFan(screen_vertices, rl.Color.red);
+
+            // Optional: draw dots for debugging
+            // for (screen_vertices) |pt| {
+            //     rl.drawCircleV(pt, 2.0, rl.Color.green);
+            // }
+
+        }
     }
 
     rl.drawTextureRec(
