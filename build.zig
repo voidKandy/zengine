@@ -66,7 +66,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    // lib_unit_tests.root_module.addImport("engine_core", engine_core_lib);
+    game_unit_tests.root_module.addImport("engine_core", engine_core_lib);
     game_unit_tests.root_module.addImport("zbullet", zbullet.module("root"));
     game_unit_tests.linkLibrary(zbullet.artifact("cbullet"));
     game_unit_tests.linkLibrary(raylib_artifact);
