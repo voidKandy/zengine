@@ -10,20 +10,29 @@ test {
     std.testing.refAllDecls(@This());
 }
 
-pub const CameraBundle = struct {
-    camera: @import("raylib").Camera3D,
-    // should have an error return !void
-    _update: *const fn () void,
-};
-
-pub fn Scene(comptime MAX_CAMERAS: usize) type {
+pub fn Scene(
+    comptime MAX_CAMERAS: usize,
+    comptime EcsOptions: ecs.EcsOptions,
+) type {
     return struct {
+        const ThisEcs = ecs.Ecs(EcsOptions);
+
+        /// The `query` argument is the set of components that either have an impact on the camera
+        /// or are impacted by the camera in some way
+        const CameraBundle = struct {
+            camera: @import("raylib").Camera3D,
+            // _update: *const fn (*@This(), ThisEcs.Query) anyerror!void,
+
+        };
+
+        const Self = @This();
+
         current: usize,
         amount: usize,
         /// Should be *tightly packed*
         /// No gaps of `null` between bundles
+        /// To ensure this, the `remove` method moves the last camera to the index of the removed camera bundle
         cameras: [MAX_CAMERAS]?CameraBundle,
-        const Self = @This();
 
         pub fn init() Self {
             var cameras: [MAX_CAMERAS]?CameraBundle = undefined;
@@ -35,7 +44,7 @@ pub fn Scene(comptime MAX_CAMERAS: usize) type {
             };
         }
 
-        pub fn select_next(self: *Self) void {
+        pub fn selectNext(self: *Self) void {
             const next = self.current + 1;
             if ((next >= self.cameras.len) or self.cameras[next] == null) {
                 self.current = 0;
@@ -44,7 +53,7 @@ pub fn Scene(comptime MAX_CAMERAS: usize) type {
             }
         }
 
-        pub fn select_prev(self: *Self) void {
+        pub fn selectPrev(self: *Self) void {
             const prev = self.current - 1;
             if ((prev <= 0)) {
                 self.current = blk: {
@@ -67,7 +76,7 @@ pub fn Scene(comptime MAX_CAMERAS: usize) type {
             self.current = idx;
         }
 
-        pub fn current_camera(self: Self) ?CameraBundle {
+        pub fn currentCamera(self: Self) ?CameraBundle {
             return self.cameras[self.current];
         }
 

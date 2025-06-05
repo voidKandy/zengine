@@ -7,15 +7,14 @@ const Type = std.builtin.Type;
 const Shape = zbt.Shape;
 const Allocator = std.mem.Allocator;
 
-/// Used to manage any struct that can be identified with a `u32` and that has a signature
-/// (Entities & Systems)
+/// Associates some `Data` type with a `u32` identifier
+/// Currently used for managing `System`s and `Entity`s
 fn IdentifierManager(
     MAX: comptime_int,
-    SIGNATURE_SIZE: comptime_int,
+    Data: type,
 ) type {
     return struct {
         const Identifier = u32;
-        const Signature = std.bit_set.IntegerBitSet(@intCast(SIGNATURE_SIZE));
         const IdQueue = std.DoublyLinkedList(Identifier);
         const Self = @This();
         const Error = error{
@@ -30,10 +29,10 @@ fn IdentifierManager(
         index_map: std.AutoHashMap(Identifier, usize),
         identifier_map: std.AutoHashMap(usize, Identifier),
         count: usize,
-        signatures: [MAX]Signature = initsigs: {
-            var signatures: [MAX]Signature = undefined;
-            @memset(&signatures, Signature.initEmpty());
-            break :initsigs signatures;
+        data: [MAX]?Data = blk: {
+            var all: [MAX]?Data = undefined;
+            @memset(&all, null);
+            break :blk all;
         },
 
         /// requires the same allocator be passed as with `init`
@@ -61,7 +60,6 @@ fn IdentifierManager(
             var current = head;
             for (0..MAX) |_| {
                 const id = rand.int(u32);
-                // warn("Added ID: {} to queue\n", .{id});
                 const node = allocator.create(IdQueue.Node) catch |e| {
                     std.log.err("Error: {}", .{e});
                     return error.OutOfMemory;
@@ -84,19 +82,8 @@ fn IdentifierManager(
         /// Returns a tuple of the `Identifier` (`u32`) and the index
         fn register(
             self: *Self,
+            data: Data,
         ) Error!struct { Identifier, usize } {
-            defer {
-                warn(
-                    \\ NEW COUNT: {}
-                    \\ ARRAY: 
-                , .{
-                    // sig.mask,
-                    self.count});
-                // inline for (self.signatures) |s| {
-                //     warn("{b}", .{s.mask});
-                // }
-            }
-
             const id: Identifier = ent: {
                 const node = self.available_ids;
                 const next = self.available_ids.next orelse return error.NoIdentifier;
@@ -109,7 +96,7 @@ fn IdentifierManager(
             , .{ id, self.count });
             self.index_map.put(id, self.count) catch return error.Insert;
             self.identifier_map.put(self.count, id) catch return error.Insert;
-            // self.signatures[self.count] = Signature.initEmpty();
+            self.data[self.count] = data;
             self.count += 1;
 
             return .{ id, self.count - 1 };
@@ -135,7 +122,7 @@ fn IdentifierManager(
 
             if (self.lastRegistered()) |last_reg| {
                 if (last_reg.@"0" != id) {
-                    const last_sig = self.getSignature(last_reg.@"0") orelse @panic("No signature for last inserted?");
+                    const last_data = self.getData(last_reg.@"0") orelse @panic("No signature for last inserted?");
                     warn(
                         \\
                         \\ LAST REGISTERED EXISTS
@@ -145,16 +132,14 @@ fn IdentifierManager(
                     , .{
                         last_reg.@"0",
                         last_reg.@"1",
-                        last_sig.mask,
+                        last_data.mask,
                     });
                     self.index_map.put(last_reg.@"0", index) catch return error.Insert;
                     self.identifier_map.put(index, last_reg.@"0") catch return error.Insert;
-                    self.signatures[index] = last_sig;
-                    self.signatures[last_reg.@"1"] = Signature.initEmpty();
+                    self.data[index] = last_data;
+                    self.data[last_reg.@"1"] = null;
                 }
             }
-            // const last_sig = self.signatures[self.count - 1];
-            // const last_ent = self.identifier_map.get(self.count - 1) orelse return error.NoIdentifier;
 
             const node = allocator.create(IdQueue.Node) catch return error.OutOfMemory;
             node.* = IdQueue.Node{ .next = null, .data = id };
@@ -170,111 +155,74 @@ fn IdentifierManager(
             return;
         }
 
-        /// Gets all entities who have at least all the bits that are set in the given signature set
-        pub fn getBySignatureOption(self: Self, buffer: *[MAX]Identifier, signature: Self.Signature) ?[]Identifier {
-            var amt: usize = 0;
-            for (0.., self.signatures) |i, sig| {
-                if (signature.subsetOf(sig)) {
-                    const identifier = self.identifier_map.get(i) orelse @panic("NO MATCHING IDENTIFIER FOR THAT INDEX");
-                    // std.log.debug("Entity at index {} has a matching signature\nID: {}\n", .{ i, identifier });
-                    buffer[amt] = identifier;
-                    amt += 1;
-                }
-            }
-
-            if (amt < 1) {
-                return null;
-            }
-
-            return buffer[0..amt];
-        }
-
-        /// Gets all entities who have at least all the bits that are set in the given signature set
-        pub fn getBySignatureAtLeast(self: Self, buffer: *[MAX]Identifier, signature: Self.Signature) ?[]Identifier {
-            var amt: usize = 0;
-            for (0.., self.signatures) |i, sig| {
-                if (signature.subsetOf(sig)) {
-                    const identifier = self.identifier_map.get(i) orelse @panic("NO MATCHING IDENTIFIER FOR THAT INDEX");
-                    // std.log.debug("Entity at index {} has a matching signature\nID: {}\n", .{ i, identifier });
-                    buffer[amt] = identifier;
-                    amt += 1;
-                }
-            }
-
-            if (amt < 1) {
-                return null;
-            }
-
-            return buffer[0..amt];
-        }
-
-        /// Gets all entities that match the given signature *exactly*
-        fn getBySignatureExact(self: Self, buffer: *[MAX]Identifier, signature: Self.Signature) ?[]Identifier {
-            // var all: [MAX]Identifier = undefined;
-            // @memset(&all, 0);
-            var amt: usize = 0;
-            for (0.., self.signatures) |i, sig| {
-                if (signature.eql(sig)) {
-                    const identifier = self.identifier_map.get(i) orelse @panic("NO MATCHING IDENTIFIER FOR THAT INDEX");
-                    std.log.warn("Entity at index {} has a matching signature\nID: {}\n", .{ i, identifier });
-                    buffer[amt] = identifier;
-                    amt += 1;
-                }
-                // std.log.warn("ALL: {any}\n", .{all});
-            }
-
-            if (amt < 1) {
-                return null;
-            }
-            const ret =
-                buffer[0..amt];
-
-            std.log.warn("RET: {any}\n", .{ret});
-            return ret;
-        }
-
-        fn getSignature(self: Self, entity: Identifier) ?Self.Signature {
+        fn getData(self: Self, entity: Identifier) ?Data {
             const idx = self.index_map.get(entity) orelse return null;
-            return self.signatures[idx];
+            return self.data[idx];
         }
-        // fn register_component_for_entity(self: *Self, entity: Identifier, component: anytype) void {}
     };
 }
 
 pub const Component = struct { [:0]const u8, type };
 pub const Entity = u32;
 
+pub const EcsOptions = struct {
+    max_entities: usize,
+    max_systems: usize,
+    State: type,
+    components: []const Component,
+    // maybe remove default??
+    // max_cameras: usize = 3,
+};
+
 /// Entity Component System "Coordinator"
 pub fn Ecs(
-    MaxNEntities: comptime_int,
-    MaxNSystems: comptime_int,
-    comptime State: type,
-    comptime Components: []const Component,
+    comptime Options: EcsOptions,
 ) type {
-    if (MaxNEntities == 0 or MaxNSystems == 0) {
-        @compileError("Set MaxNEntities & MaxNSystems to at least 1!");
+    if (Options.max_entities == 0 or Options.max_systems == 0) {
+        @compileError("Set Options.max_entities & Options.max_systems to at least 1!");
     }
     return struct {
         const ThisEcs = @This();
-        pub const Signature = std.bit_set.IntegerBitSet(@intCast(Components.len));
-        pub const ComponentsEnum = ComponentsManager.Enum;
-
-        pub inline fn componentType(variant: ComponentsEnum) type {
-            const idx = @intFromEnum(variant);
-            return Components[idx].@"1";
-        }
-
+        pub const State = Options.State;
+        pub const Signature = std.bit_set.IntegerBitSet(@intCast(Options.components.len));
+        pub const ComponentsTag = ComponentsManager.Tag;
         /// Returns the signature associated with the given components
-        pub fn get_signature(components: []ComponentsEnum) Signature {
+        pub fn componentsSignature(query: []ComponentsTag) Signature {
             var sig = Signature.initEmpty();
-            for (components) |c| {
+            for (query) |c| {
                 sig.set(@intFromEnum(c));
             }
             return sig;
         }
+        pub inline fn componentType(variant: ComponentsTag) type {
+            const idx = @intFromEnum(variant);
+            return Options.components[idx].@"1";
+        }
+
+        pub const QueryRule = enum {
+            /// Signature must match EXACTLY the passed components
+            exact,
+            /// Signature must have AT LEAST the passed components
+            at_least,
+            /// Signature must have ANY of the passed components, fails if NONE match
+            any,
+        };
+
+        pub const QueryStatement = struct {
+            rule: QueryRule,
+            sig: Signature,
+            pub fn new(rule: QueryRule, components: []const ComponentsTag) @This() {
+                return .{ .rule = rule, .sig = componentsSignature(@constCast(components)) };
+            }
+        };
+
+        pub const Query = struct {
+            is: ?QueryStatement = null,
+            is_not: ?QueryStatement = null,
+        };
 
         const ComponentsManager = cmp_man: {
-            const N = Components.len;
+            const N = Options.components.len;
             const ComponentTag: type, const TypeArr: [N]type = blk: {
                 var fields: [N]Type.EnumField = undefined;
                 var types: [N]type = undefined;
@@ -283,7 +231,7 @@ pub fn Ecs(
                     .value = 0,
                 });
 
-                for (0.., Components, &types) |i, c, *t| {
+                for (0.., Options.components, &types) |i, c, *t| {
                     fields[i] = Type.EnumField{
                         .name = c.@"0",
                         .value = i,
@@ -300,19 +248,19 @@ pub fn Ecs(
             };
 
             break :cmp_man struct {
-                const Enum = ComponentTag;
+                const Tag = ComponentTag;
                 /// Each array corresponds with the components in the order they were passed
-                arrays: [N][MaxNEntities]?*anyopaque,
+                arrays: [N][Options.max_entities]?*anyopaque,
                 const Error = error{ InvalidType, OutOfMemory };
-                inline fn tagType(which: Enum) type {
+                inline fn tagType(which: Tag) type {
                     return TypeArr[@intFromEnum(which)];
                 }
 
                 pub fn init() @This() {
                     return @This(){ .arrays = arr: {
-                        var arr: [N][MaxNEntities]?*anyopaque = undefined;
+                        var arr: [N][Options.max_entities]?*anyopaque = undefined;
                         @memset(&arr, inner: {
-                            var a: [MaxNEntities]?*anyopaque = undefined;
+                            var a: [Options.max_entities]?*anyopaque = undefined;
                             @memset(&a, null);
                             break :inner a;
                         });
@@ -337,7 +285,7 @@ pub fn Ecs(
 
                 /// expects to be passed `T` for `component`
                 /// **NEVER** use multiple allocators for a single instance
-                pub fn insert(self: *@This(), allocator: Allocator, which: Enum, idx: usize, component: anytype) Error!void {
+                pub fn insert(self: *@This(), allocator: Allocator, which: Tag, idx: usize, component: anytype) Error!void {
                     switch (@typeInfo(@TypeOf(component))) {
                         .pointer => {
                             std.log.err(
@@ -361,7 +309,7 @@ pub fn Ecs(
 
                 /// moves component at `idx` to `to_idx`
                 /// Nullifies data that was previously at `to_idx`
-                fn swap(self: *@This(), which: Enum, idx: usize, to_idx: usize) void {
+                fn swap(self: *@This(), which: Tag, idx: usize, to_idx: usize) void {
                     var arr = self.arrays[@intFromEnum(which)];
                     const tmp = arr[idx];
                     arr[to_idx] = tmp;
@@ -369,18 +317,18 @@ pub fn Ecs(
                     self.arrays[@intFromEnum(which)] = arr;
                 }
 
-                pub fn removeNoReturn(self: *@This(), which: Enum, idx: usize) void {
+                pub fn removeNoReturn(self: *@This(), which: Tag, idx: usize) void {
                     self.arrays[@intFromEnum(which)][idx] = null;
                     return;
                 }
 
-                pub fn removeWithReturn(self: *@This(), T: type, which: Enum, idx: usize) ?*T {
+                pub fn removeWithReturn(self: *@This(), T: type, which: Tag, idx: usize) ?*T {
                     const val = self.arrays[@intFromEnum(which)][idx];
                     self.removeNoReturn(which, idx);
                     return @alignCast(@ptrCast(val));
                 }
 
-                pub fn access(self: *@This(), T: type, which: Enum, idx: usize) ?*T {
+                pub fn access(self: *@This(), T: type, which: Tag, idx: usize) ?*T {
                     const ptr = self.arrays[@intFromEnum(which)][idx] orelse return null;
                     if (@intFromPtr(ptr) % @alignOf(T) != 0) {
                         @panic("Misaligned pointer access in ECS component store");
@@ -391,14 +339,15 @@ pub fn Ecs(
         };
 
         const EntityManager = struct {
-            manager: IdentifierManager(MaxNEntities, Components.len),
+            manager: IdentifierManager(Options.max_entities, Signature),
 
             fn init(allocator: Allocator) @This() {
-                return .{ .manager = IdentifierManager(MaxNEntities, Components.len).init(allocator) catch @panic("Could not create IdentifierManager for Entities") };
+                return .{ .manager = IdentifierManager(Options.max_entities, Signature).init(allocator) catch @panic("Could not create IdentifierManager for Entities") };
             }
 
+            /// Creates an empty with an empty `Signature`
             pub fn register(self: *@This()) !EntityHandle {
-                const id, const i = try self.manager.register();
+                const id, const i = try self.manager.register(Signature.initEmpty());
                 _ = i;
                 var parent_ptr =
                     @as(*ThisEcs, @fieldParentPtr("entities", self));
@@ -409,6 +358,73 @@ pub fn Ecs(
                     .identifier = id,
                 };
             }
+
+            pub fn getBySignatureOption(self: @This(), buffer: *[Options.max_entities]Entity, signature: Signature) ?[]Entity {
+                var amt: usize = 0;
+                for (0.., self.manager.data) |i, sig_opt| {
+                    const sig = sig_opt orelse break;
+                    if (signature.subsetOf(sig)) {
+                        const identifier = self.manager.identifier_map.get(i) orelse @panic("NO MATCHING IDENTIFIER FOR THAT INDEX");
+                        // std.log.debug("Entity at index {} has a matching signature\nID: {}\n", .{ i, identifier });
+                        buffer[amt] = identifier;
+                        amt += 1;
+                    }
+                }
+
+                if (amt < 1) {
+                    return null;
+                }
+
+                return buffer[0..amt];
+            }
+
+            // Gets all entities who have at least all the bits that are set in the given signature set
+            pub fn getBySignatureAtLeast(self: @This(), buffer: *[Options.max_entities]Entity, signature: Signature) ?[]Entity {
+                var amt: usize = 0;
+                for (0.., self.manager.data) |i, sig_opt| {
+                    const sig = sig_opt orelse break;
+
+                    if (signature.subsetOf(sig)) {
+                        const identifier = self.manager.identifier_map.get(i) orelse @panic("NO MATCHING IDENTIFIER FOR THAT INDEX");
+                        // std.log.debug("Entity at index {} has a matching signature\nID: {}\n", .{ i, identifier });
+                        buffer[amt] = identifier;
+                        amt += 1;
+                    }
+                }
+
+                if (amt < 1) {
+                    return null;
+                }
+
+                return buffer[0..amt];
+            }
+
+            // Gets all entities that match the given signature *exactly*
+            fn getBySignatureExact(self: @This(), buffer: *[Options.max_entities]Entity, signature: Signature) ?[]Entity {
+                // var all: [MAX]Identifier = undefined;
+                // @memset(&all, 0);
+                var amt: usize = 0;
+                for (0.., self.manager.data) |i, sig_opt| {
+                    const sig = sig_opt orelse break;
+                    if (signature.eql(sig)) {
+                        const identifier = self.manager.identifier_map.get(i) orelse @panic("NO MATCHING IDENTIFIER FOR THAT INDEX");
+                        std.log.warn("Entity at index {} has a matching signature\nID: {}\n", .{ i, identifier });
+                        buffer[amt] = identifier;
+                        amt += 1;
+                    }
+                    // std.log.warn("ALL: {any}\n", .{all});
+                }
+
+                if (amt < 1) {
+                    return null;
+                }
+                const ret =
+                    buffer[0..amt];
+
+                std.log.warn("RET: {any}\n", .{ret});
+                return ret;
+            }
+
             /// Helper struct for easily managing any components associated with an entity
             pub const EntityHandle = struct {
                 ecs: *ThisEcs,
@@ -428,10 +444,10 @@ pub fn Ecs(
                     const idx = self.index() orelse return error.NoIndex;
                     // Before removing the entity, we clear it's component data
                     {
-                        const sig = self.ecs.entities.manager.getSignature(self.identifier) orelse @panic("No entity signature?");
+                        const sig = self.ecs.entities.manager.getData(self.identifier) orelse @panic("No entity signature?");
                         var bit_idx_iter = sig.iterator(.{});
                         while (bit_idx_iter.next()) |i| {
-                            const comp_enum: ComponentsEnum = @enumFromInt(i);
+                            const comp_enum: ComponentsTag = @enumFromInt(i);
                             self.ecs.components.removeNoReturn(comp_enum, idx);
                         }
                     }
@@ -456,85 +472,43 @@ pub fn Ecs(
                                     \\ Got: {}
                                 , .{ last.@"0", ent });
                             }
-                            const sig = self.ecs.entities.manager.getSignature(ent) orelse @panic("No entity signature?");
+                            const sig = self.ecs.entities.manager.getData(ent) orelse @panic("No entity signature?");
                             var bit_idx_iter = sig.iterator(.{});
                             while (bit_idx_iter.next()) |i| {
-                                const comp_enum: ComponentsEnum = @enumFromInt(i);
+                                const comp_enum: ComponentsTag = @enumFromInt(i);
                                 self.ecs.components.swap(comp_enum, prev_idx_of_moved_ent, idx);
                             }
                         }
                     }
                 }
 
-                pub fn removeComponent(self: *@This(), which: ComponentsEnum, component: anytype) !void {
+                pub fn removeComponent(self: *@This(), which: ComponentsTag, component: anytype) !void {
                     const idx = self.index() orelse @panic("NO INDEX?");
-                    var sig = self.ecs.entities.manager.signatures[idx];
+                    var sig = self.ecs.entities.manager.data[idx];
                     sig.unset(@intFromEnum(which));
                     self.ecs.components.removeWithReturn(@TypeOf(component), which, idx) orelse return error.ComponentRemovalFailure;
                 }
 
-                pub fn addComponent(self: *@This(), which: ComponentsEnum, component: anytype) !void {
+                pub fn addComponent(self: *@This(), which: ComponentsTag, component: anytype) !void {
                     const idx = self.index() orelse @panic("NO INDEX?");
-                    // const signature = self.ecs.get_signature(&[_]ComponentsEnum{component});
-                    var sig = self.ecs.entities.manager.signatures[idx];
+                    var sig = self.ecs.entities.manager.data[idx] orelse @panic("NO DATA?");
                     std.log.debug("sig: {b}\n", .{sig.mask});
                     sig.set(@intFromEnum(which));
                     std.log.debug("changed sig: {b}\n", .{sig.mask});
-                    self.ecs.entities.manager.signatures[idx] = sig;
+                    self.ecs.entities.manager.data[idx] = sig;
                     try self.ecs.components.insert(self.ecs.allocator, which, idx, component);
                 }
             };
         };
 
-        const SystemFn = *const fn ([]Entity, *ThisEcs, *State) void;
+        const SystemFn = *const fn ([]Entity, *ThisEcs, *Options.State) void;
 
-        pub fn System(
-            components: []const ComponentsEnum,
-            _func: SystemFn,
-        ) type {
-            return struct {
-                func: SystemFn = _func,
-                signature: Signature = sig: {
-                    var s = Signature.initEmpty();
-                    for (components) |c| {
-                        s.set(@intFromEnum(c));
-                    }
-                    break :sig s;
-                },
-            };
-        }
-        const SystemManager = struct {
-            const MyManager = IdentifierManager(MaxNSystems, Components.len);
-            manager: MyManager,
-            all_fns: [MaxNSystems]?SystemFn = a: {
-                var a: [MaxNSystems]?SystemFn = undefined;
-                @memset(&a, null);
-                break :a a;
-            },
-
-            fn init(allocator: Allocator) @This() {
-                return .{ .manager = IdentifierManager(MaxNSystems, Components.len).init(allocator) catch @panic("Failed to crate id manager for systems") };
-            }
-
-            pub fn register(self: *@This(), system: anytype) !void {
-                const system_id, const system_idx = try self.manager.register();
-                std.log.warn("REGISTERED SYSTEM WITH ID: {} INTO ECS", .{system_id});
-                self.manager.signatures[system_idx] = system.signature;
-                self.all_fns[system_idx] = system.func;
-            }
-
-            /// The same kind of thing as `EntityHandle.destroy`
-            /// removes the system and then move the function of the moved system to the old index of the removed system
-            fn remove(self: *@This(), allocator: Allocator, system_id: MyManager.Identifier) !void {
-                const idx = self.manager.index_map.get(system_id) orelse return error.NoSystem;
-                try self.manager.remove(allocator, system_id);
-                if (self.manager.lastRegistered()) |last| {
-                    const fn_to_move = self.all_fns[last.@"1"];
-                    self.all_fns[idx] = fn_to_move;
-                    self.all_fns[last.@"1"] = null;
-                }
-            }
+        pub const System = struct {
+            query: Query,
+            runFn: SystemFn,
         };
+
+        const SystemManager = IdentifierManager(Options.max_systems, System);
 
         /// this is an allocator returned by `ArenaAllocator.allocator()`
         allocator: Allocator,
@@ -550,35 +524,39 @@ pub fn Ecs(
             return ThisEcs{
                 .allocator = alloc,
                 .entities = EntityManager.init(alloc),
-                .systems = SystemManager.init(alloc),
+                .systems = SystemManager.init(alloc) catch @panic("FAILED to initialize Systems Manager"),
                 .components = ComponentsManager.init(),
             };
         }
 
         pub fn deinit(self: *ThisEcs) void {
             self.entities.manager.deinit(self.allocator);
-            self.systems.manager.deinit(self.allocator);
+            self.systems.deinit(self.allocator);
             self.components.deinit(self.allocator);
         }
 
-        pub fn runSystems(self: *ThisEcs, state: *State) !void {
+        pub fn runSystems(self: *ThisEcs, state: *Options.State) !void {
             var iter =
-                self.systems.manager.identifier_map.iterator();
-            while (iter.next()) |e| {
-                const id = e.value_ptr;
-                const idx = e.key_ptr;
-
-                const sig = self.systems.manager.getSignature(id.*) orelse return error.NoSignature;
-                var all: [MaxNEntities]Entity = undefined;
+                self.systems.identifier_map.valueIterator();
+            while (iter.next()) |id| {
+                const system = self.systems.getData(id.*) orelse return error.NoData;
+                var all: [Options.max_entities]Entity = undefined;
                 @memset(&all, 0);
+                // BAD!
+                // Must change this function to go through any `is` or `is_not` statements
+                const comparisonFn: *const fn (EntityManager, *[Options.max_entities]Entity, Signature) ?[]Entity = switch (system.query.is.?.rule) {
+                    .at_least => EntityManager.getBySignatureAtLeast,
+                    .exact => EntityManager.getBySignatureExact,
+                    // BAD!!! THIS IS THE SAME BEHAVIOR AS EXACT
+                    .any => EntityManager.getBySignatureExact,
+                };
 
-                if (self.entities.manager.getBySignatureAtLeast(&all, sig)) |entities| {
+                if (comparisonFn(self.entities, &all, system.query.is.?.sig)) |entities| {
                     std.log.warn(
                         \\ Running system {} on {} entities
                         \\
                     , .{ id.*, entities.len });
-                    const func = self.systems.all_fns[idx.*] orelse return error.NoFunction;
-                    func(entities, self, state);
+                    system.runFn(entities, self, state);
                 }
             }
         }
@@ -598,12 +576,16 @@ test "ECS Entity Management" {
     , .{});
 
     const State = struct {};
-    const MyEcs = Ecs(5, 5, State, &[_]Component{
-        .{ "somecomponent", bool },
-        .{ "othercomponent", u8 },
-        .{ "someothercomponent", u32 },
+    const MyEcs = Ecs(.{
+        .max_entities = 5,
+        .max_systems = 5,
+        .State = State,
+        .components = &[_]Component{
+            .{ "somecomponent", bool },
+            .{ "othercomponent", u8 },
+            .{ "someothercomponent", u32 },
+        },
     });
-
     var ecs = MyEcs.init(&arena);
     defer ecs.deinit();
 
@@ -612,18 +594,18 @@ test "ECS Entity Management" {
     const entity_a: MyEcs.EntityManager.EntityHandle = a: {
         var handle = try ecs.entities.register();
         const someother: u32 = 5;
-        try handle.addComponent(MyEcs.ComponentsEnum.someothercomponent, someother);
+        try handle.addComponent(MyEcs.ComponentsTag.someothercomponent, someother);
         const some: bool = false;
-        try handle.addComponent(MyEcs.ComponentsEnum.somecomponent, some);
+        try handle.addComponent(MyEcs.ComponentsTag.somecomponent, some);
         break :a handle;
     };
 
     const entity_b: MyEcs.EntityManager.EntityHandle = a: {
         var handle = try ecs.entities.register();
         const someother: u32 = 7;
-        try handle.addComponent(MyEcs.ComponentsEnum.someothercomponent, someother);
+        try handle.addComponent(MyEcs.ComponentsTag.someothercomponent, someother);
         const some: bool = true;
-        try handle.addComponent(MyEcs.ComponentsEnum.somecomponent, some);
+        try handle.addComponent(MyEcs.ComponentsTag.somecomponent, some);
         break :a handle;
     };
 
@@ -635,33 +617,33 @@ test "ECS Entity Management" {
     // Entity Component Validation
     // ---
     {
-        const got = ecs.components.access(u32, MyEcs.ComponentsEnum.someothercomponent, entity_a.index().?) orelse @panic("Nothing at that index");
+        const got = ecs.components.access(u32, MyEcs.ComponentsTag.someothercomponent, entity_a.index().?) orelse @panic("Nothing at that index");
         try std.testing.expectEqual(got.*, 5);
     }
     {
-        const got = ecs.components.access(bool, MyEcs.ComponentsEnum.somecomponent, entity_a.index().?) orelse @panic("Nothing at that index");
+        const got = ecs.components.access(bool, MyEcs.ComponentsTag.somecomponent, entity_a.index().?) orelse @panic("Nothing at that index");
         try std.testing.expectEqual(got.*, false);
     }
     {
-        const got = ecs.components.access(u32, MyEcs.ComponentsEnum.someothercomponent, entity_b.index().?) orelse @panic("Nothing at that index");
+        const got = ecs.components.access(u32, MyEcs.ComponentsTag.someothercomponent, entity_b.index().?) orelse @panic("Nothing at that index");
         try std.testing.expectEqual(got.*, 7);
     }
     {
-        const got = ecs.components.access(bool, MyEcs.ComponentsEnum.somecomponent, entity_b.index().?) orelse @panic("Nothing at that index");
+        const got = ecs.components.access(bool, MyEcs.ComponentsTag.somecomponent, entity_b.index().?) orelse @panic("Nothing at that index");
         try std.testing.expectEqual(got.*, true);
     }
     {
-        const got = ecs.components.access(bool, MyEcs.ComponentsEnum.somecomponent, entity_c.index().?);
+        const got = ecs.components.access(bool, MyEcs.ComponentsTag.somecomponent, entity_c.index().?);
         try std.testing.expect(got == null);
     }
 
     var all: [5]Entity = undefined;
     @memset(&all, 0);
 
-    const matching = ecs.entities.manager.getBySignatureExact(&all, s: {
+    const matching = ecs.entities.getBySignatureExact(&all, s: {
         var s = MyEcs.Signature.initEmpty();
-        s.set(@intFromEnum(MyEcs.ComponentsEnum.somecomponent));
-        s.set(@intFromEnum(MyEcs.ComponentsEnum.someothercomponent));
+        s.set(@intFromEnum(MyEcs.ComponentsTag.somecomponent));
+        s.set(@intFromEnum(MyEcs.ComponentsTag.someothercomponent));
         break :s s;
     }) orelse @panic("should have got some matching entities");
 
@@ -673,9 +655,9 @@ test "ECS Entity Management" {
     // ---
 
     {
-        const removed = ecs.components.removeWithReturn(bool, MyEcs.ComponentsEnum.somecomponent, entity_a.index().?) orelse @panic("nothing at that index");
+        const removed = ecs.components.removeWithReturn(bool, MyEcs.ComponentsTag.somecomponent, entity_a.index().?) orelse @panic("nothing at that index");
         try std.testing.expectEqual(removed.*, false);
-        try std.testing.expectEqual(null, ecs.components.access(bool, MyEcs.ComponentsEnum.somecomponent, entity_a.index().?));
+        try std.testing.expectEqual(null, ecs.components.access(bool, MyEcs.ComponentsTag.somecomponent, entity_a.index().?));
     }
 
     // Entity Index Storage
@@ -698,30 +680,35 @@ test "ECS Entity Management" {
     }
     // Systems
     // ---
-    const SomeSystem = MyEcs.System(&[_]MyEcs.ComponentsEnum{.someothercomponent}, struct {
-        fn run(entities: []Entity, myecs: *MyEcs, state: *State) void {
-            _ = state;
-            warn("IN SOME SYSTEM\n", .{});
-            for (entities) |e| {
-                warn("MUTATING ENTITY: {}", .{e});
-                const idx = myecs.entities.manager.index_map.get(e) orelse @panic("ENTITY SHOULD HAVE AN INDEX?");
-                const v = myecs.components.access(u32, .someothercomponent, idx) orelse @panic("SHOULD HAVE THIS COMPONENT?");
-                warn("VAL: {}", .{v.*});
-                const new: u32 = 1111;
-                myecs.components.insert(myecs.allocator, .someothercomponent, idx, new) catch @panic("FAILED TO INSERT COMPONENT");
-                // v.* = @as(u32, 1111);
+    const SomeSystem = MyEcs.System{
+        .query = MyEcs.Query{
+            .is = MyEcs.QueryStatement.new(.at_least, &[_]MyEcs.ComponentsTag{.someothercomponent}),
+        },
+        .runFn = struct {
+            fn run(entities: []Entity, myecs: *MyEcs, state: *State) void {
+                _ = state;
+                warn("IN SOME SYSTEM\n", .{});
+                for (entities) |e| {
+                    warn("MUTATING ENTITY: {}", .{e});
+                    const idx = myecs.entities.manager.index_map.get(e) orelse @panic("ENTITY SHOULD HAVE AN INDEX?");
+                    const v = myecs.components.access(u32, .someothercomponent, idx) orelse @panic("SHOULD HAVE THIS COMPONENT?");
+                    warn("VAL: {}", .{v.*});
+                    const new: u32 = 1111;
+                    myecs.components.insert(myecs.allocator, .someothercomponent, idx, new) catch @panic("FAILED TO INSERT COMPONENT");
+                    // v.* = @as(u32, 1111);
+                }
             }
-        }
-    }.run);
+        }.run,
+    };
 
-    try ecs.systems.register(SomeSystem{});
+    _ = try ecs.systems.register(SomeSystem);
 
     var state = State{};
     try ecs.runSystems(&state);
 
     for ([_]MyEcs.EntityManager.EntityHandle{entity_b}) |e| {
         // _ = e;
-        const got = ecs.components.access(u32, MyEcs.ComponentsEnum.someothercomponent, e.index().?) orelse @panic("Nothing at that index");
+        const got = ecs.components.access(u32, MyEcs.ComponentsTag.someothercomponent, e.index().?) orelse @panic("Nothing at that index");
         try std.testing.expectEqual(
             1111,
             got.*,

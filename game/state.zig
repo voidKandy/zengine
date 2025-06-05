@@ -1,15 +1,24 @@
 const core = @import("root.zig");
+const engine = @import("engine_core");
 const zm = @import("zmath");
 const rl = @import("raylib");
 const std = @import("std");
 const zbt = @import("zbullet");
+
+/// Each of the below functions are provided by the game to
+/// encapsulate specific needed camera behavior.
+/// To be used as the `_update` field in`core.CameraBundle`
+/// ```
+/// _update: *const fn (@This()) anyerror!void,
+/// ```
+pub fn update(*core.CameraBundle) anyerror!void {}
 
 pub const State = struct {
     window_height: f32,
     window_width: f32,
     // entities: EntityArray,
     // component_entites: core.ecs.OldEntity.Storage,
-    camera: rl.Camera3D,
+    scene: core.Ecs.Scene,
     /// Corresponds with the `camera_track` component
     /// Will change as the player rotates around the object
     object_impulse: ?struct {

@@ -20,7 +20,6 @@ pub const PlayerInteract = enum {
     }
 };
 
-//     Ecs.System(&[_]Ecs.ComponentsEnum{ .transform, .body }, struct {
 //     fn sync(entities: []core.ecs.Entity, myecs: *Ecs, state: *core.state.State) void {}
 // }.sync);
 

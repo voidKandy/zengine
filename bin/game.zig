@@ -7,7 +7,7 @@ const zm = @import("zmath");
 const Vector3 = rl.Vector3;
 const Ecs = game.Ecs;
 
-fn init_camera() rl.Camera3D {
+fn initScene() rl.Camera3D {
     const camera = rl.Camera3D{
         .position = Vector3.init(10.0, 10.0, 10.0), // Camera position
         .target = Vector3.init(0.0, 0.0, 0.0), // Camera looking at point
@@ -15,7 +15,15 @@ fn init_camera() rl.Camera3D {
         .fovy = 45.0, // Camera field-of-view Y
         .projection = rl.CameraProjection.perspective,
     };
-    return camera;
+    const bundle = engine.CameraBundle{
+        .camera = camera,
+        ._update = struct {
+            fn update() void {}
+        }.update,
+    };
+    var scene = game.state.Scene.init();
+    scene.add(bundle);
+    return scene;
 }
 
 /// Not **everything** has to be done in systems

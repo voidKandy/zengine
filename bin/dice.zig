@@ -8,7 +8,7 @@ const zm = @import("zmath");
 const warn = std.log.warn;
 const Vector3 = rl.Vector3;
 
-fn init_camera() rl.Camera3D {
+fn initScene() game.state.Scene {
     const camera = rl.Camera{
         .position = rl.Vector3.init(0.0, 2.0, 4.0),
         .target = rl.Vector3.init(0.0, 0.0, 0.0),
@@ -16,7 +16,15 @@ fn init_camera() rl.Camera3D {
         .fovy = 45.0,
         .projection = rl.CameraProjection.perspective,
     };
-    return camera;
+    const bundle = engine.CameraBundle{
+        .camera = camera,
+        ._update = struct {
+            fn update() void {}
+        }.update,
+    };
+    var scene = game.state.Scene.init();
+    scene.add(bundle);
+    return scene;
 }
 
 pub const RotateD6System = game.Ecs.System(&[_]game.Ecs.ComponentsEnum{.bundle}, struct {
@@ -63,10 +71,11 @@ pub fn main() !void {
     physics_debug.* = zbt.DebugDrawer.init(arena.allocator());
     physics_world.debugSetDrawer(&physics_debug.getDebugDraw());
     physics_world.debugSetMode(.{ .draw_wireframe = true, .draw_aabb = true });
+    const scene = initScene();
     var state = game.state.State{
         .window_height = screen_height,
         .window_width = screen_width,
-        .camera = init_camera(),
+        .camera = scene,
         // .pick = .{
         //     .p2p = zbt.allocPoint2PointConstraint(),
         // },
@@ -118,7 +127,7 @@ pub fn main() !void {
 
         // draw
         {
-            rl.beginMode3D(state.camera);
+            rl.beginMode3D(state.scene.currentCamera().?);
             defer rl.endMode3D();
 
             rl.drawGrid(10, 1.0);
