@@ -11,22 +11,10 @@ const Vector3 = rl.Vector3;
 const WINDOW_WIDTH = 800;
 const WINDOW_HEIGHT = 450;
 /// assumes `zbt.init()` has been called
-fn initScene(allocator: std.mem.Allocator) !game.Ecs.Scene {
-    var physics_world = zbt.initWorld();
-    const default_gravity: f32 = 10.0;
-    physics_world.setGravity(&.{ 0.0, -default_gravity, 0.0 });
-    var physics_debug = try allocator.create(zbt.DebugDrawer);
-    physics_debug.* = zbt.DebugDrawer.init(allocator);
-    physics_world.debugSetDrawer(&physics_debug.getDebugDraw());
-    physics_world.debugSetMode(.{ .draw_wireframe = true, .draw_aabb = true });
-
+fn initScene() game.Ecs.Scene {
     const state = game.state.GameState{
         .window_height = WINDOW_HEIGHT,
         .window_width = WINDOW_WIDTH,
-        .physics = .{
-            .world = physics_world,
-            .debug = physics_debug,
-        },
     };
 
     var scene = game.Ecs.Scene.init(state);
@@ -90,7 +78,7 @@ pub fn main() !void {
     zbt.init(arena.allocator());
     defer zbt.deinit();
 
-    var scene = try initScene(arena.allocator());
+    var scene = initScene();
     defer scene.deinit();
 
     const numbers_atlas_texture = rl.loadTexture("resources/numbers.png") catch @panic("COULD NOT GET TEXTURE FROM ATLAS IMAGE");
