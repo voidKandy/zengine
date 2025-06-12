@@ -18,7 +18,7 @@ pub const MAX_MESHES_PER_ENTITY: usize = 10;
 const EcsOptions = engine.ecs.EcsOptions{
     .max_entities = MAX_N_ENTITIES,
     .max_systems = MAX_N_SYSTEMS,
-    .state = state.State,
+    .State = state.GameState,
     .components = &[_]engine.ecs.Component{
         .{ "bundle", engine.MeshBundle },
         .{ "transform", rl.Matrix },
@@ -36,7 +36,6 @@ const EcsOptions = engine.ecs.EcsOptions{
         .{ "body", i32 },
     },
 };
-pub const Scene = engine.Scene(8, EcsOptions);
 pub const Ecs = engine.ecs.Ecs(EcsOptions);
 
 test {
@@ -50,6 +49,14 @@ test "scene" {
     var ecs = Ecs.init(&arena);
     defer ecs.deinit();
 
+    const gmstate = state.GameState{
+        .window_height = 100,
+        .window_width = 100,
+        // .pick = .{
+        //     .p2p = zbt.allocPoint2PointConstraint(),
+        // },
+    };
+
     const camera = rl.Camera{
         .position = rl.Vector3.init(0.0, 2.0, 4.0),
         .target = rl.Vector3.init(0.0, 0.0, 0.0),
@@ -58,14 +65,29 @@ test "scene" {
         .projection = rl.CameraProjection.perspective,
     };
 
-    const bundle = engine.CameraBundle{
+    const bundle = Ecs.Scene.CameraBundle{
         .camera = camera,
-        ._update = struct {
-            fn update() void {}
-        }.update,
+        .system = Ecs.System{
+            .query = Ecs.Query{},
+            .runFn = struct {
+                fn run(entities: []engine.ecs.Entity, myecs: *Ecs, st: *Ecs.State) void {
+                    _ = entities;
+                    _ = myecs;
+                    _ = st;
+                }
+            }.run,
+        },
+        // ._update = struct {
+        //     fn update() void {}
+        // }.update,
     };
-    var scene = engine.Scene(5).init();
-    scene.add(bundle);
+    var scene = Ecs.Scene.init(gmstate);
+    scene.addCamera(bundle);
+
+    for (scene.cameras) |b| {
+        if (b == null) break;
+        _ = try ecs.systems.register(b.?.system);
+    }
 
     std.debug.print(
         \\ BUILT SCENE SUCCESSFULLY: {any}

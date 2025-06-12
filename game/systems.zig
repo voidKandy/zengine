@@ -16,7 +16,7 @@ pub const CameraTrackingSystem = Ecs.System{
         var yaw: f32 = 0.0; // Horizontal angle (radians)
         var pitch: f32 = 0.5; // Vertical angle (radians, avoid -PI/2 and PI/2)
 
-        fn orbitTransformation(state: *game.state.State, transform: rl.Matrix) void {
+        fn orbitTransformation(state: *game.state.GameState, transform: rl.Matrix) void {
             const mouse_delta = rl.getMouseDelta();
             yaw += mouse_delta.x * mouse_sensitivity;
             pitch += mouse_delta.y * mouse_sensitivity;
@@ -62,7 +62,7 @@ pub const CameraTrackingSystem = Ecs.System{
             camera.target = target;
         }
 
-        fn run(entities: []engine.ecs.Entity, myecs: *Ecs, state: *game.state.State) void {
+        fn run(entities: []engine.ecs.Entity, myecs: *Ecs, state: *game.state.GameState) void {
             std.log.warn("IN TRACKING SYSTEM\n", .{});
             std.debug.assert(entities.len == 1);
             const followed_entity = entities[0];
@@ -73,7 +73,7 @@ pub const CameraTrackingSystem = Ecs.System{
             const body_id = myecs.components.access(i32, .body, idx) orelse @panic("NO BODY??");
             const transform = bundle.transform;
             orbitTransformation(state, transform);
-            const body = state.physics.world.getBody(body_id.*);
+            const body = state.physics.?.world.getBody(body_id.*);
 
             if (!body.isActive()) {
                 const face_up = face_up: {
@@ -157,7 +157,7 @@ pub const CameraTrackingSystem = Ecs.System{
                 };
                 var result: zbt.RayCastResult = undefined;
 
-                const is_hit = state.physics.world.rayTestClosest(
+                const is_hit = state.physics.?.world.rayTestClosest(
                     &ray_from,
                     &ray_to,
                     .{ .default = true },
@@ -230,7 +230,7 @@ pub const CameraTrackingSystem = Ecs.System{
 pub const SyncPhysicsSystem = Ecs.System{
     .query = Ecs.Query{ .is = Ecs.QueryStatement.new(.at_least, &[_]Ecs.ComponentsTag{ .bundle, .body }) },
     .runFn = struct {
-        fn run(entities: []engine.ecs.Entity, myecs: *Ecs, state: *game.state.State) void {
+        fn run(entities: []engine.ecs.Entity, myecs: *Ecs, state: *game.state.GameState) void {
             std.log.warn("IN SYNC SYSTEM\n", .{});
             for (entities) |e| {
                 const idx = myecs.entities.manager.index_map.get(e).?;
@@ -249,7 +249,7 @@ pub const SyncPhysicsSystem = Ecs.System{
                     continue;
                 };
 
-                const body = state.physics.world.getBody(body_id.*);
+                const body = state.physics.?.world.getBody(body_id.*);
 
                 const transform = object_to_world: {
                     var transform: [12]f32 = undefined;

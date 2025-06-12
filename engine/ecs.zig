@@ -80,7 +80,7 @@ fn IdentifierManager(
         }
 
         /// Returns a tuple of the `Identifier` (`u32`) and the index
-        fn register(
+        pub fn register(
             self: *Self,
             data: Data,
         ) Error!struct { Identifier, usize } {
@@ -170,8 +170,9 @@ pub const EcsOptions = struct {
     max_systems: usize,
     State: type,
     components: []const Component,
-    // maybe remove default??
-    // max_cameras: usize = 3,
+    /// Since I'm unsure about whether the `Scene` function should be encapsulated within `ECS`
+    /// I'm unsure about the inclusion of `Scene` parameters in `EcsOptions`
+    max_cameras: usize = 5,
 };
 
 /// Entity Component System "Coordinator"
@@ -206,6 +207,28 @@ pub fn Ecs(
             at_least,
             /// Signature must have ANY of the passed components, fails if NONE match
             any,
+
+            /// Some function for comparing one signature to another, returns true if the first signature passes the needed requirements
+            const ComparisonFunction = *const fn (Signature, Signature) bool;
+            pub fn cmpFn(rule: QueryRule) ComparisonFunction {
+                return switch (rule) {
+                    .at_least => struct {
+                        fn cmp(sig: Signature, other: Signature) bool {
+                            return sig.supersetOf(other);
+                        }
+                    }.cmp,
+                    .exact => struct {
+                        fn cmp(sig: Signature, other: Signature) bool {
+                            return sig.eql(other);
+                        }
+                    }.cmp,
+                    .any => struct {
+                        fn cmp(sig: Signature, other: Signature) bool {
+                            return !sig.intersectWith(other).eql(Signature.initEmpty());
+                        }
+                    }.cmp,
+                };
+            }
         };
 
         pub const QueryStatement = struct {
@@ -359,74 +382,56 @@ pub fn Ecs(
                 };
             }
 
-            pub fn getBySignatureOption(self: @This(), buffer: *[Options.max_entities]Entity, signature: Signature) ?[]Entity {
-                var amt: usize = 0;
-                for (0.., self.manager.data) |i, sig_opt| {
-                    const sig = sig_opt orelse break;
-                    if (signature.subsetOf(sig)) {
-                        const identifier = self.manager.identifier_map.get(i) orelse @panic("NO MATCHING IDENTIFIER FOR THAT INDEX");
-                        // std.log.debug("Entity at index {} has a matching signature\nID: {}\n", .{ i, identifier });
-                        buffer[amt] = identifier;
-                        amt += 1;
+            pub fn queryEntities(self: *@This(), allocator: std.mem.Allocator, query: Query) std.mem.Allocator.Error!?[]Entity {
+                std.log.warn(
+                    \\
+                    \\ Running Query 
+                , .{});
+                var all = std.ArrayList(Entity).init(allocator);
+
+                var entity_iter = self.manager.identifier_map.valueIterator();
+                while (entity_iter.next()) |entity| {
+                    const idx = self.manager.index_map.get(entity.*) orelse @panic("NO INDEX FOR ENTITY??");
+                    const sig = self.manager.data[idx] orelse @panic("NO SIGNATURE FOR ENTITY??");
+
+                    var is_match = true;
+                    if (query.is) |is| {
+                        std.log.warn(
+                            \\
+                            \\ Comparing sigs [IS]
+                            \\ {b}
+                            \\ {b}
+                        , .{ sig.mask, is.sig.mask });
+                        is_match = is.rule.cmpFn()(sig, is.sig);
+                    }
+
+                    var is_not_match = false;
+                    if (query.is_not) |is_not| {
+                        std.log.warn(
+                            \\
+                            \\ Comparing sigs [IS NOT]
+                            \\ {b}
+                            \\ {b}
+                        , .{ sig.mask, is_not.sig.mask });
+
+                        is_not_match = is_not.rule.cmpFn()(sig, is_not.sig);
+                    }
+
+                    if (is_match and !is_not_match) {
+                        try all.append(entity.*);
                     }
                 }
 
-                if (amt < 1) {
+                if (all.items.len <= 0) {
+                    all.deinit();
                     return null;
                 }
-
-                return buffer[0..amt];
+                return try all.toOwnedSlice();
             }
 
-            // Gets all entities who have at least all the bits that are set in the given signature set
-            pub fn getBySignatureAtLeast(self: @This(), buffer: *[Options.max_entities]Entity, signature: Signature) ?[]Entity {
-                var amt: usize = 0;
-                for (0.., self.manager.data) |i, sig_opt| {
-                    const sig = sig_opt orelse break;
-
-                    if (signature.subsetOf(sig)) {
-                        const identifier = self.manager.identifier_map.get(i) orelse @panic("NO MATCHING IDENTIFIER FOR THAT INDEX");
-                        // std.log.debug("Entity at index {} has a matching signature\nID: {}\n", .{ i, identifier });
-                        buffer[amt] = identifier;
-                        amt += 1;
-                    }
-                }
-
-                if (amt < 1) {
-                    return null;
-                }
-
-                return buffer[0..amt];
-            }
-
-            // Gets all entities that match the given signature *exactly*
-            fn getBySignatureExact(self: @This(), buffer: *[Options.max_entities]Entity, signature: Signature) ?[]Entity {
-                // var all: [MAX]Identifier = undefined;
-                // @memset(&all, 0);
-                var amt: usize = 0;
-                for (0.., self.manager.data) |i, sig_opt| {
-                    const sig = sig_opt orelse break;
-                    if (signature.eql(sig)) {
-                        const identifier = self.manager.identifier_map.get(i) orelse @panic("NO MATCHING IDENTIFIER FOR THAT INDEX");
-                        std.log.warn("Entity at index {} has a matching signature\nID: {}\n", .{ i, identifier });
-                        buffer[amt] = identifier;
-                        amt += 1;
-                    }
-                    // std.log.warn("ALL: {any}\n", .{all});
-                }
-
-                if (amt < 1) {
-                    return null;
-                }
-                const ret =
-                    buffer[0..amt];
-
-                std.log.warn("RET: {any}\n", .{ret});
-                return ret;
-            }
-
+            /// Returns the function by which `Entity`s are compared according to a `Query`'s rule
             /// Helper struct for easily managing any components associated with an entity
-            pub const EntityHandle = struct {
+            const EntityHandle = struct {
                 ecs: *ThisEcs,
                 identifier: Entity,
 
@@ -535,31 +540,136 @@ pub fn Ecs(
             self.components.deinit(self.allocator);
         }
 
-        pub fn runSystems(self: *ThisEcs, state: *Options.State) !void {
-            var iter =
-                self.systems.identifier_map.valueIterator();
-            while (iter.next()) |id| {
-                const system = self.systems.getData(id.*) orelse return error.NoData;
-                var all: [Options.max_entities]Entity = undefined;
-                @memset(&all, 0);
-                // BAD!
-                // Must change this function to go through any `is` or `is_not` statements
-                const comparisonFn: *const fn (EntityManager, *[Options.max_entities]Entity, Signature) ?[]Entity = switch (system.query.is.?.rule) {
-                    .at_least => EntityManager.getBySignatureAtLeast,
-                    .exact => EntityManager.getBySignatureExact,
-                    // BAD!!! THIS IS THE SAME BEHAVIOR AS EXACT
-                    .any => EntityManager.getBySignatureExact,
-                };
+        pub fn runSystems(self: *ThisEcs, scene: *ThisEcs.Scene) !void {
+            {
+                std.log.warn(
+                    \\
+                    \\ Running Camera Systems
+                , .{});
+                while (scene.currentCamera()) |c| {
+                    if (try self.entities.queryEntities(self.allocator, c.system.query)) |entities| {
+                        c.system.runFn(entities, self, &scene.state);
+                    }
+                }
+            }
 
-                if (comparisonFn(self.entities, &all, system.query.is.?.sig)) |entities| {
+            std.log.warn(
+                \\
+                \\ Running Other Systems
+            , .{});
+            var systems_iter =
+                self.systems.identifier_map.valueIterator();
+            while (systems_iter.next()) |id| {
+                const system = self.systems.getData(id.*) orelse return error.NoData;
+                const entities_opt =
+                    try self.entities.queryEntities(self.allocator, system.query);
+
+                if (entities_opt) |entities| {
                     std.log.warn(
-                        \\ Running system {} on {} entities
                         \\
-                    , .{ id.*, entities.len });
-                    system.runFn(entities, self, state);
+                        \\ Got Entites Matching: {any}
+                    , .{entities});
+                    system.runFn(entities, self, &scene.state);
+                } else {
+                    std.log.warn(
+                        \\
+                        \\ No Entites Matching
+                    , .{});
                 }
             }
         }
+        // Maybe should be moved outside of the juristiction of `ECS`
+        pub const Scene = struct {
+            /// The `query` argument is the set of components that either have an impact on the camera
+            /// or are impacted by the camera in some way
+            pub const CameraBundle = struct {
+                camera: @import("raylib").Camera3D,
+                system: ThisEcs.System,
+            };
+
+            const Self = @This();
+
+            current: usize,
+            amount: usize,
+            /// Should be *tightly packed*
+            /// No gaps of `null` between bundles
+            /// To ensure this, the `remove` method moves the last camera to the index of the removed camera bundle
+            cameras: [Options.max_cameras]?CameraBundle,
+            state: State,
+
+            pub fn init(
+                state: State,
+            ) Self {
+                var cameras: [Options.max_cameras]?CameraBundle = undefined;
+                @memset(&cameras, null);
+                return .{
+                    .state = state,
+                    .current = 0,
+                    .amount = 0,
+                    .cameras = cameras,
+                };
+            }
+
+            pub fn deinit(self: @This()) void {
+                comptime {
+                    if (!@hasDecl(State, "deinit"))
+                        @compileError("State type must have a deinit method!!!");
+                }
+                self.state.deinit();
+            }
+
+            pub fn selectNextCamera(self: *Self) void {
+                const next = self.current + 1;
+                if ((next >= self.cameras.len) or self.cameras[next] == null) {
+                    self.current = 0;
+                } else {
+                    self.current = next;
+                }
+            }
+
+            pub fn selectPrevCamera(self: *Self) void {
+                const prev = self.current - 1;
+                if ((prev <= 0)) {
+                    self.current = blk: {
+                        var count: usize = 0;
+                        while (self.cameras) |_| {
+                            count += 1;
+                        }
+                        break :blk count;
+                    };
+                } else {
+                    self.current = prev;
+                }
+            }
+
+            pub fn selectCamera(self: *Self, idx: usize) !void {
+                if (self.cameras[idx] == null) {
+                    return error.NoCamera;
+                }
+
+                self.current = idx;
+            }
+
+            pub fn currentCamera(self: Self) ?CameraBundle {
+                return self.cameras[self.current];
+            }
+
+            pub fn addCamera(self: *Self, cam: CameraBundle) void {
+                var idx: usize = 0;
+                for (self.cameras) |c| {
+                    if (c == null) break;
+                    idx += 1;
+                }
+                std.debug.assert(idx < Options.max_cameras);
+                self.cameras[idx] = cam;
+                self.amount += 1;
+            }
+
+            pub fn removeCamera(self: *Self, idx: usize) void {
+                self.cameras[idx] = self.cameras[self.amount - 1];
+                self.amount -= 1;
+            }
+        };
     };
 }
 
@@ -640,12 +750,14 @@ test "ECS Entity Management" {
     var all: [5]Entity = undefined;
     @memset(&all, 0);
 
-    const matching = ecs.entities.getBySignatureExact(&all, s: {
+    const query = MyEcs.Query{ .is = .{ .rule = .exact, .sig = s: {
         var s = MyEcs.Signature.initEmpty();
         s.set(@intFromEnum(MyEcs.ComponentsTag.somecomponent));
         s.set(@intFromEnum(MyEcs.ComponentsTag.someothercomponent));
         break :s s;
-    }) orelse @panic("should have got some matching entities");
+    } } };
+
+    const matching = try ecs.entities.queryEntities(arena.allocator(), query) orelse @panic("NOTHING MATCHING");
 
     std.log.debug("got matching: {any}\n", .{matching});
     try std.testing.expect(std.mem.containsAtLeastScalar(Entity, matching, 1, entity_a.identifier));
@@ -703,11 +815,11 @@ test "ECS Entity Management" {
 
     _ = try ecs.systems.register(SomeSystem);
 
-    var state = State{};
-    try ecs.runSystems(&state);
+    // var state = State{};
+    var scene = MyEcs.Scene.init(State{});
+    try ecs.runSystems(&scene);
 
     for ([_]MyEcs.EntityManager.EntityHandle{entity_b}) |e| {
-        // _ = e;
         const got = ecs.components.access(u32, MyEcs.ComponentsTag.someothercomponent, e.index().?) orelse @panic("Nothing at that index");
         try std.testing.expectEqual(
             1111,
