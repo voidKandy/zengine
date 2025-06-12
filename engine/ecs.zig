@@ -383,10 +383,10 @@ pub fn Ecs(
             }
 
             pub fn queryEntities(self: *@This(), allocator: std.mem.Allocator, query: Query) std.mem.Allocator.Error!?[]Entity {
-                std.log.warn(
-                    \\
-                    \\ Running Query 
-                , .{});
+                // std.log.warn(
+                //     \\
+                //     \\ Running Query
+                // , .{});
                 var all = std.ArrayList(Entity).init(allocator);
 
                 var entity_iter = self.manager.identifier_map.valueIterator();
@@ -546,11 +546,15 @@ pub fn Ecs(
                     \\
                     \\ Running Camera Systems
                 , .{});
-                while (scene.currentCamera()) |c| {
-                    if (try self.entities.queryEntities(self.allocator, c.system.query)) |entities| {
-                        c.system.runFn(entities, self, &scene.state);
+                const starting_camera = scene.current;
+                for (0..scene.amount) |i| {
+                    try scene.selectCamera(i);
+                    const camera = scene.currentCamera() orelse break;
+                    if (try self.entities.queryEntities(self.allocator, camera.system.query)) |entities| {
+                        camera.system.runFn(entities, self, &scene.state);
                     }
                 }
+                try scene.selectCamera(starting_camera);
             }
 
             std.log.warn(

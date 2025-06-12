@@ -8,7 +8,29 @@ const zm = @import("zmath");
 const warn = std.log.warn;
 const Vector3 = rl.Vector3;
 
-fn initScene() game.state.Scene {
+const WINDOW_WIDTH = 800;
+const WINDOW_HEIGHT = 450;
+/// assumes `zbt.init()` has been called
+fn initScene(allocator: std.mem.Allocator) !game.Ecs.Scene {
+    var physics_world = zbt.initWorld();
+    const default_gravity: f32 = 10.0;
+    physics_world.setGravity(&.{ 0.0, -default_gravity, 0.0 });
+    var physics_debug = try allocator.create(zbt.DebugDrawer);
+    physics_debug.* = zbt.DebugDrawer.init(allocator);
+    physics_world.debugSetDrawer(&physics_debug.getDebugDraw());
+    physics_world.debugSetMode(.{ .draw_wireframe = true, .draw_aabb = true });
+
+    const state = game.state.GameState{
+        .window_height = WINDOW_HEIGHT,
+        .window_width = WINDOW_WIDTH,
+        .physics = .{
+            .world = physics_world,
+            .debug = physics_debug,
+        },
+    };
+
+    var scene = game.Ecs.Scene.init(state);
+
     const camera = rl.Camera{
         .position = rl.Vector3.init(0.0, 2.0, 4.0),
         .target = rl.Vector3.init(0.0, 0.0, 0.0),
@@ -16,19 +38,26 @@ fn initScene() game.state.Scene {
         .fovy = 45.0,
         .projection = rl.CameraProjection.perspective,
     };
-    const bundle = engine.CameraBundle{
+    const bundle = game.Ecs.Scene.CameraBundle{
         .camera = camera,
-        ._update = struct {
-            fn update() void {}
-        }.update,
+
+        .system = game.Ecs.System{
+            .query = game.Ecs.Query{},
+            .runFn = struct {
+                fn run(entities: []engine.ecs.Entity, myecs: *game.Ecs, st: *game.Ecs.State) void {
+                    _ = entities;
+                    _ = myecs;
+                    _ = st;
+                }
+            }.run,
+        },
     };
-    var scene = game.state.Scene.init();
-    scene.add(bundle);
+    scene.addCamera(bundle);
     return scene;
 }
 
-pub const RotateD6System = game.Ecs.System(&[_]game.Ecs.ComponentsEnum{.bundle}, struct {
-    fn run(entities: []engine.ecs.Entity, myecs: *game.Ecs, state: *game.state.State) void {
+pub const RotateD6System = game.Ecs.System{ .query = game.Ecs.Query{ .is = game.Ecs.QueryStatement.new(.at_least, &[_]game.Ecs.ComponentsTag{.bundle}) }, .runFn = struct {
+    fn run(entities: []engine.ecs.Entity, myecs: *game.Ecs, state: *game.state.GameState) void {
         const dt = rl.getFrameTime();
         const rotation = rl.Matrix.rotateXYZ(rl.Vector3{
             .x = 2.0 * dt,
@@ -44,48 +73,25 @@ pub const RotateD6System = game.Ecs.System(&[_]game.Ecs.ComponentsEnum{.bundle},
         bundle.transform = rl.Matrix.multiply(rotation, bundle.transform);
         _ = state;
     }
-}.run);
+}.run };
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
     var arena = std.heap.ArenaAllocator.init(allocator);
 
-    const screen_width = 800;
-    const screen_height = 450;
-    rl.initWindow(screen_width, screen_height, "Dice");
+    rl.initWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "Dice");
     defer rl.closeWindow();
 
     var ecs = game.Ecs.init(&arena);
     defer ecs.deinit();
-    try ecs.systems.register(RotateD6System{});
+    _ = try ecs.systems.register(RotateD6System);
 
     zbt.init(arena.allocator());
     defer zbt.deinit();
 
-    // We don't need physics in this binary, maybe it's best that `State` has physics as an optional field
-    var physics_world = zbt.initWorld();
-    const default_gravity: f32 = 10.0;
-    physics_world.setGravity(&.{ 0.0, -default_gravity, 0.0 });
-    var physics_debug = try arena.allocator().create(zbt.DebugDrawer);
-    physics_debug.* = zbt.DebugDrawer.init(arena.allocator());
-    physics_world.debugSetDrawer(&physics_debug.getDebugDraw());
-    physics_world.debugSetMode(.{ .draw_wireframe = true, .draw_aabb = true });
-    const scene = initScene();
-    var state = game.state.State{
-        .window_height = screen_height,
-        .window_width = screen_width,
-        .camera = scene,
-        // .pick = .{
-        //     .p2p = zbt.allocPoint2PointConstraint(),
-        // },
-        .physics = .{
-            .world = physics_world,
-            .debug = physics_debug,
-        },
-    };
-
-    defer state.deinit();
+    var scene = try initScene(arena.allocator());
+    defer scene.deinit();
 
     const numbers_atlas_texture = rl.loadTexture("resources/numbers.png") catch @panic("COULD NOT GET TEXTURE FROM ATLAS IMAGE");
 
@@ -120,14 +126,15 @@ pub fn main() !void {
     _ = d6_entity;
 
     while (!rl.windowShouldClose()) {
-        try ecs.runSystems(&state);
+        try ecs.runSystems(&scene);
         rl.beginDrawing();
         rl.clearBackground(rl.Color.black);
         defer rl.endDrawing();
-
+        const camera =
+            scene.currentCamera().?.camera;
         // draw
         {
-            rl.beginMode3D(state.scene.currentCamera().?);
+            rl.beginMode3D(camera);
             defer rl.endMode3D();
 
             rl.drawGrid(10, 1.0);
