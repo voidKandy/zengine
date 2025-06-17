@@ -10,8 +10,8 @@ const Ecs = game.Ecs;
 const WINDOW_WIDTH = 1600;
 const WINDOW_HEIGHT = 900;
 
-fn initScene(allocator: std.mem.Allocator, zbt_instance: zbt) game.Scene {
-    var physics_world = zbt_instance.initWorld();
+fn initScene(allocator: std.mem.Allocator) !game.Ecs.Scene {
+    var physics_world = zbt.initWorld();
 
     const default_gravity: f32 = 10.0;
     physics_world.setGravity(&.{ 0.0, -default_gravity, 0.0 });
@@ -29,21 +29,8 @@ fn initScene(allocator: std.mem.Allocator, zbt_instance: zbt) game.Scene {
         },
     };
 
-    const camera = rl.Camera3D{
-        .position = Vector3.init(10.0, 10.0, 10.0), // Camera position
-        .target = Vector3.init(0.0, 0.0, 0.0), // Camera looking at point
-        .up = Vector3.init(0.0, 1.0, 0.0), // Camera up vector (rotation towards target)
-        .fovy = 45.0, // Camera field-of-view Y
-        .projection = rl.CameraProjection.perspective,
-    };
-    const bundle = engine.CameraBundle{
-        .camera = camera,
-        ._update = struct {
-            fn update() void {}
-        }.update,
-    };
     var scene = Ecs.Scene.init(state);
-    scene.add(bundle);
+    scene.addCamera(game.cameras.BundleTrackingCamera);
     return scene;
 }
 
@@ -156,14 +143,14 @@ pub fn main() anyerror!void {
     // ECS Setup
     var ecs = Ecs.init(&arena);
     defer ecs.deinit();
-    try ecs.systems.register(game.systems.CameraTrackingSystem{});
-    try ecs.systems.register(game.systems.SyncPhysicsSystem{});
+    // _ = try ecs.systems.register(game.systems.CameraTrackingSystem);
+    _ = try ecs.systems.register(game.systems.SyncPhysicsSystem);
 
     // World Setup
     //---
     zbt.init(arena.allocator());
     defer zbt.deinit();
-    var scene = initScene(arena.allocator(), zbt);
+    var scene = try initScene(arena.allocator());
     defer scene.deinit();
 
     // const room_shapes = try createRoom(&ecs, &state, 500.0);

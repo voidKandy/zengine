@@ -155,7 +155,7 @@ fn IdentifierManager(
             return;
         }
 
-        fn getData(self: Self, entity: Identifier) ?Data {
+        pub fn getData(self: Self, entity: Identifier) ?Data {
             const idx = self.index_map.get(entity) orelse return null;
             return self.data[idx];
         }
@@ -170,9 +170,6 @@ pub const EcsOptions = struct {
     max_systems: usize,
     State: type,
     components: []const Component,
-    /// Since I'm unsure about whether the `Scene` function should be encapsulated within `ECS`
-    /// I'm unsure about the inclusion of `Scene` parameters in `EcsOptions`
-    max_cameras: usize = 5,
 };
 
 /// Entity Component System "Coordinator"
@@ -185,6 +182,14 @@ pub fn Ecs(
     return struct {
         const ThisEcs = @This();
         pub const State = Options.State;
+        pub const Opts = Options;
+
+        /// Archetypes can easily be expressed through signatures:
+        /// ```zig
+        /// var archetype = Signature.initZeros();
+        /// archetype.set(@intFromEnum(ComponentsTag.mycomponent));
+        /// archetype.set(@intFromEnum(ComponentsTag.othercomponent));
+        /// ```
         pub const Signature = std.bit_set.IntegerBitSet(@intCast(Options.components.len));
         pub const ComponentsTag = ComponentsManager.Tag;
         /// Returns the signature associated with the given components
@@ -194,6 +199,18 @@ pub fn Ecs(
                 sig.set(@intFromEnum(c));
             }
             return sig;
+        }
+
+        pub inline fn signatureComponents(signature: Signature) []ComponentsTag {
+            var all: [Options.components.len]ComponentsTag = undefined;
+            var amt: usize = 0;
+            for (0..Signature.bit_length, &all) |i, *tag| {
+                if (signature.isSet(i)) {
+                    tag.* = @intFromEnum(i);
+                    amt += 1;
+                }
+            }
+            return &all;
         }
         pub inline fn componentType(variant: ComponentsTag) type {
             const idx = @intFromEnum(variant);
@@ -239,9 +256,15 @@ pub fn Ecs(
             }
         };
 
-        pub const Query = struct {
-            is: ?QueryStatement = null,
-            is_not: ?QueryStatement = null,
+        /// Query can either directly look for an entity by id (id)
+        /// or they can be queried by component signature (query)
+        pub const QueryType = enum { id, query };
+        pub const Query = union(QueryType) {
+            id: Entity,
+            query: struct {
+                is: ?QueryStatement = null,
+                is_not: ?QueryStatement = null,
+            },
         };
 
         const ComponentsManager = cmp_man: {
@@ -271,7 +294,8 @@ pub fn Ecs(
             };
 
             break :cmp_man struct {
-                const Tag = ComponentTag;
+                pub const Tag = ComponentTag;
+                pub const Types = TypeArr;
                 /// Each array corresponds with the components in the order they were passed
                 arrays: [N][Options.max_entities]?*anyopaque,
                 const Error = error{ InvalidType, OutOfMemory };
@@ -383,43 +407,53 @@ pub fn Ecs(
             }
 
             pub fn queryEntities(self: *@This(), allocator: std.mem.Allocator, query: Query) std.mem.Allocator.Error!?[]Entity {
-                // std.log.warn(
-                //     \\
-                //     \\ Running Query
-                // , .{});
+                std.log.warn(
+                    \\
+                    \\ Running Query
+                , .{});
                 var all = std.ArrayList(Entity).init(allocator);
 
-                var entity_iter = self.manager.identifier_map.valueIterator();
-                while (entity_iter.next()) |entity| {
-                    const idx = self.manager.index_map.get(entity.*) orelse @panic("NO INDEX FOR ENTITY??");
-                    const sig = self.manager.data[idx] orelse @panic("NO SIGNATURE FOR ENTITY??");
+                switch (query) {
+                    .id => |entity_id| {
+                        if (self.manager.index_map.get(entity_id)) |_|
+                            try all.append(entity_id)
+                        else
+                            return null;
+                    },
+                    .query => |q| {
+                        var entity_iter = self.manager.identifier_map.valueIterator();
+                        while (entity_iter.next()) |entity| {
+                            const idx = self.manager.index_map.get(entity.*) orelse @panic("NO INDEX FOR ENTITY??");
+                            const sig = self.manager.data[idx] orelse @panic("NO SIGNATURE FOR ENTITY??");
 
-                    var is_match = true;
-                    if (query.is) |is| {
-                        std.log.warn(
-                            \\
-                            \\ Comparing sigs [IS]
-                            \\ {b}
-                            \\ {b}
-                        , .{ sig.mask, is.sig.mask });
-                        is_match = is.rule.cmpFn()(sig, is.sig);
-                    }
+                            var is_match = true;
+                            if (q.is) |is| {
+                                std.log.warn(
+                                    \\
+                                    \\ Comparing sigs [IS]
+                                    \\ {b}
+                                    \\ {b}
+                                , .{ sig.mask, is.sig.mask });
+                                is_match = is.rule.cmpFn()(sig, is.sig);
+                            }
 
-                    var is_not_match = false;
-                    if (query.is_not) |is_not| {
-                        std.log.warn(
-                            \\
-                            \\ Comparing sigs [IS NOT]
-                            \\ {b}
-                            \\ {b}
-                        , .{ sig.mask, is_not.sig.mask });
+                            var is_not_match = false;
+                            if (q.is_not) |is_not| {
+                                std.log.warn(
+                                    \\
+                                    \\ Comparing sigs [IS NOT]
+                                    \\ {b}
+                                    \\ {b}
+                                , .{ sig.mask, is_not.sig.mask });
 
-                        is_not_match = is_not.rule.cmpFn()(sig, is_not.sig);
-                    }
+                                is_not_match = is_not.rule.cmpFn()(sig, is_not.sig);
+                            }
 
-                    if (is_match and !is_not_match) {
-                        try all.append(entity.*);
-                    }
+                            if (is_match and !is_not_match) {
+                                try all.append(entity.*);
+                            }
+                        }
+                    },
                 }
 
                 if (all.items.len <= 0) {
@@ -509,6 +543,7 @@ pub fn Ecs(
         const SystemFn = *const fn ([]Entity, *ThisEcs, *Options.State) void;
 
         pub const System = struct {
+            disabled: bool = false,
             query: Query,
             runFn: SystemFn,
         };
@@ -540,140 +575,44 @@ pub fn Ecs(
             self.components.deinit(self.allocator);
         }
 
-        pub fn runSystems(self: *ThisEcs, scene: *ThisEcs.Scene) !void {
-            {
-                std.log.warn(
-                    \\
-                    \\ Running Camera Systems
-                , .{});
-                const starting_camera = scene.current;
-                for (0..scene.amount) |i| {
-                    try scene.selectCamera(i);
-                    const camera = scene.currentCamera() orelse break;
-                    if (try self.entities.queryEntities(self.allocator, camera.system.query)) |entities| {
-                        camera.system.runFn(entities, self, &scene.state);
-                    }
-                }
-                try scene.selectCamera(starting_camera);
-            }
-
+        pub fn runSystems(self: *ThisEcs, state: *ThisEcs.State) !void {
             std.log.warn(
                 \\
-                \\ Running Other Systems
+                \\ Running Systems
             , .{});
             var systems_iter =
                 self.systems.identifier_map.valueIterator();
             while (systems_iter.next()) |id| {
                 const system = self.systems.getData(id.*) orelse return error.NoData;
-                const entities_opt =
-                    try self.entities.queryEntities(self.allocator, system.query);
+                if (system.disabled) continue;
 
-                if (entities_opt) |entities| {
+                const entities = queries: {
+                    var all: [Options.max_entities]Entity = undefined;
+                    var amt: usize = 0;
+                    if (try self.entities.queryEntities(self.allocator, system.query)) |entities| {
+                        for (entities) |e| {
+                            all[amt] = e;
+                            amt += 1;
+                            std.debug.assert(amt < Options.max_entities);
+                        }
+                    }
+                    break :queries all[0..amt];
+                };
+
+                if (entities.len > 0) {
                     std.log.warn(
                         \\
-                        \\ Got Entites Matching: {any}
+                        \\ Got Entities Matching: {any}
                     , .{entities});
-                    system.runFn(entities, self, &scene.state);
+                    system.runFn(entities, self, state);
                 } else {
                     std.log.warn(
                         \\
-                        \\ No Entites Matching
+                        \\ No Entities Matching
                     , .{});
                 }
             }
         }
-        // Maybe should be moved outside of the juristiction of `ECS`
-        pub const Scene = struct {
-            /// The `query` argument is the set of components that either have an impact on the camera
-            /// or are impacted by the camera in some way
-            pub const CameraBundle = struct {
-                camera: @import("raylib").Camera3D,
-                system: ThisEcs.System,
-            };
-
-            const Self = @This();
-
-            current: usize,
-            amount: usize,
-            /// Should be *tightly packed*
-            /// No gaps of `null` between bundles
-            /// To ensure this, the `remove` method moves the last camera to the index of the removed camera bundle
-            cameras: [Options.max_cameras]?CameraBundle,
-            state: State,
-
-            pub fn init(
-                state: State,
-            ) Self {
-                var cameras: [Options.max_cameras]?CameraBundle = undefined;
-                @memset(&cameras, null);
-                return .{
-                    .state = state,
-                    .current = 0,
-                    .amount = 0,
-                    .cameras = cameras,
-                };
-            }
-
-            pub fn deinit(self: @This()) void {
-                comptime {
-                    if (!@hasDecl(State, "deinit"))
-                        @compileError("State type must have a deinit method!!!");
-                }
-                self.state.deinit();
-            }
-
-            pub fn selectNextCamera(self: *Self) void {
-                const next = self.current + 1;
-                if ((next >= self.cameras.len) or self.cameras[next] == null) {
-                    self.current = 0;
-                } else {
-                    self.current = next;
-                }
-            }
-
-            pub fn selectPrevCamera(self: *Self) void {
-                const prev = self.current - 1;
-                if ((prev <= 0)) {
-                    self.current = blk: {
-                        var count: usize = 0;
-                        while (self.cameras) |_| {
-                            count += 1;
-                        }
-                        break :blk count;
-                    };
-                } else {
-                    self.current = prev;
-                }
-            }
-
-            pub fn selectCamera(self: *Self, idx: usize) !void {
-                if (self.cameras[idx] == null) {
-                    return error.NoCamera;
-                }
-
-                self.current = idx;
-            }
-
-            pub fn currentCamera(self: Self) ?CameraBundle {
-                return self.cameras[self.current];
-            }
-
-            pub fn addCamera(self: *Self, cam: CameraBundle) void {
-                var idx: usize = 0;
-                for (self.cameras) |c| {
-                    if (c == null) break;
-                    idx += 1;
-                }
-                std.debug.assert(idx < Options.max_cameras);
-                self.cameras[idx] = cam;
-                self.amount += 1;
-            }
-
-            pub fn removeCamera(self: *Self, idx: usize) void {
-                self.cameras[idx] = self.cameras[self.amount - 1];
-                self.amount -= 1;
-            }
-        };
     };
 }
 
@@ -754,12 +693,12 @@ test "ECS Entity Management" {
     var all: [5]Entity = undefined;
     @memset(&all, 0);
 
-    const query = MyEcs.Query{ .is = .{ .rule = .exact, .sig = s: {
+    const query = MyEcs.Query{ .query = .{ .is = .{ .rule = .exact, .sig = s: {
         var s = MyEcs.Signature.initEmpty();
         s.set(@intFromEnum(MyEcs.ComponentsTag.somecomponent));
         s.set(@intFromEnum(MyEcs.ComponentsTag.someothercomponent));
         break :s s;
-    } } };
+    } } } };
 
     const matching = try ecs.entities.queryEntities(arena.allocator(), query) orelse @panic("NOTHING MATCHING");
 
@@ -794,12 +733,13 @@ test "ECS Entity Management" {
         const got = ecs.components.access(u8, .othercomponent, entity_c.index().?);
         try std.testing.expectEqual(val, got.?.*);
     }
+
     // Systems
     // ---
     const SomeSystem = MyEcs.System{
-        .query = MyEcs.Query{
+        .query = MyEcs.Query{ .query = .{
             .is = MyEcs.QueryStatement.new(.at_least, &[_]MyEcs.ComponentsTag{.someothercomponent}),
-        },
+        } },
         .runFn = struct {
             fn run(entities: []Entity, myecs: *MyEcs, state: *State) void {
                 _ = state;
@@ -819,9 +759,8 @@ test "ECS Entity Management" {
 
     _ = try ecs.systems.register(SomeSystem);
 
-    // var state = State{};
-    var scene = MyEcs.Scene.init(State{});
-    try ecs.runSystems(&scene);
+    var state = State{};
+    try ecs.runSystems(&state);
 
     for ([_]MyEcs.EntityManager.EntityHandle{entity_b}) |e| {
         const got = ecs.components.access(u32, MyEcs.ComponentsTag.someothercomponent, e.index().?) orelse @panic("Nothing at that index");

@@ -4,7 +4,8 @@ pub const ecs = @import("ecs.zig");
 pub const util = @import("util.zig");
 pub const noise = @import("noise.zig");
 pub const MeshBundle = @import("MeshBundle.zig");
-pub const Type = std.builtin.Type;
+const Type = std.builtin.Type;
+const Entity = ecs.Entity;
 
 test {
     std.testing.refAllDecls(@This());

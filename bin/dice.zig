@@ -12,12 +12,7 @@ const WINDOW_WIDTH = 800;
 const WINDOW_HEIGHT = 450;
 /// assumes `zbt.init()` has been called
 fn initScene() game.Ecs.Scene {
-    const state = game.state.GameState{
-        .window_height = WINDOW_HEIGHT,
-        .window_width = WINDOW_WIDTH,
-    };
-
-    var scene = game.Ecs.Scene.init(state);
+    var scene = game.Ecs.Scene.init(game.cameras.CameraArchetype);
 
     const camera = rl.Camera{
         .position = rl.Vector3.init(0.0, 2.0, 4.0),
@@ -26,20 +21,17 @@ fn initScene() game.Ecs.Scene {
         .fovy = 45.0,
         .projection = rl.CameraProjection.perspective,
     };
-    const bundle = game.Ecs.Scene.CameraBundle{
-        .camera = camera,
-
-        .system = game.Ecs.System{
-            .query = game.Ecs.Query{},
-            .runFn = struct {
-                fn run(entities: []engine.ecs.Entity, myecs: *game.Ecs, st: *game.Ecs.State) void {
-                    _ = entities;
-                    _ = myecs;
-                    _ = st;
-                }
-            }.run,
-        },
-    };
+    const bundle = game.Ecs.Scene.CameraBundle{ .camera = camera, .system = .{
+        game.Ecs.Query{},
+        struct {
+            fn run(cam: rl.Camera3D, entities: []engine.ecs.Entity, myecs: *game.Ecs, st: *game.Ecs.State) void {
+                _ = cam;
+                _ = entities;
+                _ = myecs;
+                _ = st;
+            }
+        }.run,
+    } };
     scene.addCamera(bundle);
     return scene;
 }
@@ -78,8 +70,12 @@ pub fn main() !void {
     zbt.init(arena.allocator());
     defer zbt.deinit();
 
+    const state = game.state.GameState{
+        .window_height = WINDOW_HEIGHT,
+        .window_width = WINDOW_WIDTH,
+    };
+    defer state.deinit();
     var scene = initScene();
-    defer scene.deinit();
 
     const numbers_atlas_texture = rl.loadTexture("resources/numbers.png") catch @panic("COULD NOT GET TEXTURE FROM ATLAS IMAGE");
 

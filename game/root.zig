@@ -2,6 +2,7 @@ const std = @import("std");
 pub const dice = @import("dice.zig");
 pub const player = @import("player.zig");
 pub const systems = @import("systems.zig");
+pub const cameras = @import("cameras.zig");
 pub const state = @import("state.zig");
 const engine = @import("engine_core");
 const rl = @import("raylib");
@@ -21,6 +22,7 @@ const EcsOptions = engine.ecs.EcsOptions{
     .State = state.GameState,
     .components = &[_]engine.ecs.Component{
         .{ "bundle", engine.MeshBundle },
+        .{ "camera", rl.Camera3D },
         .{ "transform", rl.Matrix },
         .{ "shape", zbt.Shape },
         // SHOULD ONLY BE ONE ENTITY
@@ -36,7 +38,15 @@ const EcsOptions = engine.ecs.EcsOptions{
         .{ "body", i32 },
     },
 };
+
 pub const Ecs = engine.ecs.Ecs(EcsOptions);
+pub const DEFAULT_CAMERA = rl.Camera3D{
+    .position = rl.Vector3.init(10.0, 10.0, 10.0), // Camera position
+    .target = rl.Vector3.init(0.0, 0.0, 0.0), // Camera looking at point
+    .up = rl.Vector3.init(0.0, 1.0, 0.0), // Camera up vector (rotation towards target)
+    .fovy = 45.0, // Camera field-of-view Y
+    .projection = rl.CameraProjection.perspective,
+};
 
 test {
     std.testing.refAllDecls(@This());
@@ -49,7 +59,7 @@ test "scene" {
     var ecs = Ecs.init(&arena);
     defer ecs.deinit();
 
-    const gmstate = state.GameState{
+    var gmstate = state.GameState{
         .window_height = 100,
         .window_width = 100,
         // .pick = .{
@@ -57,40 +67,30 @@ test "scene" {
         // },
     };
 
-    const camera = rl.Camera{
-        .position = rl.Vector3.init(0.0, 2.0, 4.0),
-        .target = rl.Vector3.init(0.0, 0.0, 0.0),
-        .up = rl.Vector3.init(0.0, 1.0, 0.0),
-        .fovy = 45.0,
-        .projection = rl.CameraProjection.perspective,
-    };
+    {
+        var entity_handle = try ecs.entities.register();
 
-    const bundle = Ecs.Scene.CameraBundle{
-        .camera = camera,
-        .system = Ecs.System{
-            .query = Ecs.Query{},
-            .runFn = struct {
-                fn run(entities: []engine.ecs.Entity, myecs: *Ecs, st: *Ecs.State) void {
-                    _ = entities;
-                    _ = myecs;
-                    _ = st;
-                }
-            }.run,
-        },
-        // ._update = struct {
-        //     fn update() void {}
-        // }.update,
-    };
-    var scene = Ecs.Scene.init(gmstate);
-    scene.addCamera(bundle);
+        const camera = rl.Camera{
+            .position = rl.Vector3.init(0.0, 2.0, 4.0),
+            .target = rl.Vector3.init(0.0, 0.0, 0.0),
+            .up = rl.Vector3.init(0.0, 1.0, 0.0),
+            .fovy = 45.0,
+            .projection = rl.CameraProjection.perspective,
+        };
 
-    for (scene.cameras) |b| {
-        if (b == null) break;
-        _ = try ecs.systems.register(b.?.system);
+        try entity_handle.addComponent(.camera, camera);
+        gmstate.current_camera = entity_handle.identifier;
+
+        // try scene.cameras.put(entity_handle.identifier, null);
     }
 
-    std.debug.print(
-        \\ BUILT SCENE SUCCESSFULLY: {any}
-        \\
-    , .{scene});
+    // for (scene.cameras) |b| {
+    //     if (b == null) break;
+    //     _ = try ecs.systems.register(b.?.system);
+    // }
+
+    // std.debug.print(
+    //     \\ BUILT SCENE SUCCESSFULLY: {any}
+    //     \\
+    // , .{scene});
 }

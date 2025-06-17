@@ -22,6 +22,8 @@ pub const GameState = struct {
         position: rl.Vector3,
         target: rl.Vector3,
     } = null,
+    current_camera: ?engine.ecs.Entity = null,
+    // cameras: std.AutoHashMap(u32, rl.Camera3D),
     /// Maybe this is *BAD*?
     upward_face: ?u32 = null,
     physics: ?struct {
@@ -32,6 +34,12 @@ pub const GameState = struct {
     const Self = @This();
 
     const camera_fovy: f32 = std.math.pi / @as(f32, 3.0);
+
+    // fn runCameraSystem(self: *Self, ecs: core.Ecs) !void {
+    //     if (self.current_camera) |cam_sys_id| {
+    //         if (ecs.systems.getData(cam_sys_id)) |system| {}
+    //     }
+    // }
 
     pub fn deinit(self: @This()) void {
         if (self.physics) |ph| {
