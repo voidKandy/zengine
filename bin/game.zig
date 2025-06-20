@@ -39,6 +39,7 @@ fn initScene(allocator: std.mem.Allocator) !game.Ecs.Scene {
 /// This is because I would have to add complexity to systems to allow some to run during drawing
 /// instead, I have opted to keep systems in *just* the update loop
 fn draw(myecs: *Ecs, state: *game.state.GameState) void {
+    // myecs.entities.queryEntities(myecs.allocator, )
     rl.beginMode3D(state.camera);
     defer rl.endMode3D();
 

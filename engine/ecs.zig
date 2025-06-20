@@ -267,6 +267,8 @@ pub fn Ecs(
             },
         };
 
+        pub const QueryResult = union(QueryType) { id: Entity, query: []Entity };
+
         const ComponentsManager = cmp_man: {
             const N = Options.components.len;
             const ComponentTag: type, const TypeArr: [N]type = blk: {
@@ -406,22 +408,23 @@ pub fn Ecs(
                 };
             }
 
-            pub fn queryEntities(self: *@This(), allocator: std.mem.Allocator, query: Query) std.mem.Allocator.Error!?[]Entity {
+            pub fn queryEntities(self: *@This(), allocator: std.mem.Allocator, query: Query) std.mem.Allocator.Error!?QueryResult {
                 std.log.warn(
                     \\
                     \\ Running Query
                 , .{});
-                var all = std.ArrayList(Entity).init(allocator);
+                // var all = std.ArrayList(QueryResult).init(allocator);
 
                 switch (query) {
                     .id => |entity_id| {
                         if (self.manager.index_map.get(entity_id)) |_|
-                            try all.append(entity_id)
+                            return QueryResult{ .id = entity_id }
                         else
                             return null;
                     },
                     .query => |q| {
                         var entity_iter = self.manager.identifier_map.valueIterator();
+                        var all = std.ArrayList(Entity).init(allocator);
                         while (entity_iter.next()) |entity| {
                             const idx = self.manager.index_map.get(entity.*) orelse @panic("NO INDEX FOR ENTITY??");
                             const sig = self.manager.data[idx] orelse @panic("NO SIGNATURE FOR ENTITY??");
@@ -453,14 +456,13 @@ pub fn Ecs(
                                 try all.append(entity.*);
                             }
                         }
+                        if (all.items.len > 0)
+                            return QueryResult{ .query = try all.toOwnedSlice() }
+                        else
+                            all.deinit();
                     },
                 }
-
-                if (all.items.len <= 0) {
-                    all.deinit();
-                    return null;
-                }
-                return try all.toOwnedSlice();
+                return null;
             }
 
             /// Returns the function by which `Entity`s are compared according to a `Query`'s rule
@@ -540,13 +542,23 @@ pub fn Ecs(
             };
         };
 
-        const SystemFn = *const fn ([]Entity, *ThisEcs, *Options.State) void;
-
+        /// Systems tagged `automatic` will be run always, during the `runSystems` function
+        /// Systems tagged `explicit` will only run if they are run somehow in user space
+        pub const SysSchedule = enum {
+            automatic,
+            explicit,
+            fn isAuto(self: @This()) bool {
+                return @intFromEnum(self) == @intFromEnum(@This().automatic);
+            }
+        };
         pub const System = struct {
             disabled: bool = false,
-            query: Query,
+            schedule: SysSchedule,
+            queries: []const Query,
+            /// Each `QueryResult` in this function corresponds to each `Query` for the given system
             runFn: SystemFn,
         };
+        const SystemFn = *const fn ([]QueryResult, *ThisEcs, *Options.State) void;
 
         const SystemManager = IdentifierManager(Options.max_systems, System);
 
@@ -575,6 +587,35 @@ pub fn Ecs(
             self.components.deinit(self.allocator);
         }
 
+        pub fn runSystem(self: *ThisEcs, state: *ThisEcs.State, system: System) !void {
+            const results = queries: {
+                var all: [Options.max_entities]QueryResult = undefined;
+                var amt: usize = 0;
+
+                for (system.queries) |q| {
+                    if (try self.entities.queryEntities(self.allocator, q)) |result| {
+                        all[amt] = result;
+                        amt += 1;
+                    }
+                }
+
+                break :queries all[0..amt];
+            };
+
+            if (results.len > 0) {
+                std.log.warn(
+                    \\
+                    \\ Got Entities Matching: {any}
+                , .{results});
+                system.runFn(results, self, state);
+            } else {
+                std.log.warn(
+                    \\
+                    \\ No Entities Matching
+                , .{});
+            }
+        }
+
         pub fn runSystems(self: *ThisEcs, state: *ThisEcs.State) !void {
             std.log.warn(
                 \\
@@ -584,33 +625,8 @@ pub fn Ecs(
                 self.systems.identifier_map.valueIterator();
             while (systems_iter.next()) |id| {
                 const system = self.systems.getData(id.*) orelse return error.NoData;
-                if (system.disabled) continue;
-
-                const entities = queries: {
-                    var all: [Options.max_entities]Entity = undefined;
-                    var amt: usize = 0;
-                    if (try self.entities.queryEntities(self.allocator, system.query)) |entities| {
-                        for (entities) |e| {
-                            all[amt] = e;
-                            amt += 1;
-                            std.debug.assert(amt < Options.max_entities);
-                        }
-                    }
-                    break :queries all[0..amt];
-                };
-
-                if (entities.len > 0) {
-                    std.log.warn(
-                        \\
-                        \\ Got Entities Matching: {any}
-                    , .{entities});
-                    system.runFn(entities, self, state);
-                } else {
-                    std.log.warn(
-                        \\
-                        \\ No Entities Matching
-                    , .{});
-                }
+                if (system.disabled or !system.schedule.isAuto()) continue;
+                try self.runSystem(state, system);
             }
         }
     };
@@ -703,8 +719,8 @@ test "ECS Entity Management" {
     const matching = try ecs.entities.queryEntities(arena.allocator(), query) orelse @panic("NOTHING MATCHING");
 
     std.log.debug("got matching: {any}\n", .{matching});
-    try std.testing.expect(std.mem.containsAtLeastScalar(Entity, matching, 1, entity_a.identifier));
-    try std.testing.expect(std.mem.containsAtLeastScalar(Entity, matching, 1, entity_b.identifier));
+    try std.testing.expect(std.mem.containsAtLeastScalar(Entity, matching.query, 1, entity_a.identifier));
+    try std.testing.expect(std.mem.containsAtLeastScalar(Entity, matching.query, 1, entity_b.identifier));
 
     // Component Removal
     // ---
@@ -737,20 +753,23 @@ test "ECS Entity Management" {
     // Systems
     // ---
     const SomeSystem = MyEcs.System{
-        .query = MyEcs.Query{ .query = .{
+        .queries = &[_]MyEcs.Query{.{ .query = .{
             .is = MyEcs.QueryStatement.new(.at_least, &[_]MyEcs.ComponentsTag{.someothercomponent}),
-        } },
+        } }},
+        .schedule = .automatic,
         .runFn = struct {
-            fn run(entities: []Entity, myecs: *MyEcs, state: *State) void {
+            fn run(results: []MyEcs.QueryResult, myecs: *MyEcs, state: *State) void {
                 _ = state;
                 warn("IN SOME SYSTEM\n", .{});
-                for (entities) |e| {
-                    warn("MUTATING ENTITY: {}", .{e});
-                    const idx = myecs.entities.manager.index_map.get(e) orelse @panic("ENTITY SHOULD HAVE AN INDEX?");
-                    const v = myecs.components.access(u32, .someothercomponent, idx) orelse @panic("SHOULD HAVE THIS COMPONENT?");
-                    warn("VAL: {}", .{v.*});
-                    const new: u32 = 1111;
-                    myecs.components.insert(myecs.allocator, .someothercomponent, idx, new) catch @panic("FAILED TO INSERT COMPONENT");
+                for (results) |r| {
+                    for (r.query) |e| {
+                        warn("MUTATING ENTITY: {}", .{e});
+                        const idx = myecs.entities.manager.index_map.get(e) orelse @panic("ENTITY SHOULD HAVE AN INDEX?");
+                        const v = myecs.components.access(u32, .someothercomponent, idx) orelse @panic("SHOULD HAVE THIS COMPONENT?");
+                        warn("VAL: {}", .{v.*});
+                        const new: u32 = 1111;
+                        myecs.components.insert(myecs.allocator, .someothercomponent, idx, new) catch @panic("FAILED TO INSERT COMPONENT");
+                    }
                     // v.* = @as(u32, 1111);
                 }
             }

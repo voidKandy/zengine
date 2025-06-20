@@ -11,9 +11,7 @@ const Vector3 = rl.Vector3;
 const WINDOW_WIDTH = 800;
 const WINDOW_HEIGHT = 450;
 /// assumes `zbt.init()` has been called
-fn initScene() game.Ecs.Scene {
-    var scene = game.Ecs.Scene.init(game.cameras.CameraArchetype);
-
+fn initScene(ecs: *game.Ecs, state: *game.state.GameState) !void {
     const camera = rl.Camera{
         .position = rl.Vector3.init(0.0, 2.0, 4.0),
         .target = rl.Vector3.init(0.0, 0.0, 0.0),
@@ -21,39 +19,62 @@ fn initScene() game.Ecs.Scene {
         .fovy = 45.0,
         .projection = rl.CameraProjection.perspective,
     };
-    const bundle = game.Ecs.Scene.CameraBundle{ .camera = camera, .system = .{
-        game.Ecs.Query{},
-        struct {
-            fn run(cam: rl.Camera3D, entities: []engine.ecs.Entity, myecs: *game.Ecs, st: *game.Ecs.State) void {
+    const transform = rl.Matrix.identity();
+
+    const bundle = engine.CameraBundle.init(camera, transform);
+
+    var handle = try ecs.entities.register();
+    try handle.addComponent(.camera, bundle);
+
+    const system = game.Ecs.System{
+        .schedule = .explicit,
+        .queries = &[_]game.Ecs.Query{.{ .id = handle.identifier }},
+        .runFn = struct {
+            fn run(results: []game.Ecs.QueryResult, myecs: *game.Ecs, st: *game.state.GameState) void {
+                const camera_id = results[0].id;
+                const idx = myecs.entities.manager.index_map.get(camera_id) orelse @panic("CAMERA ENTITY DOES NOT EXIST??");
+                const cam = myecs.components.access(engine.CameraBundle, .camera, idx) orelse @panic("CAMERA BUNDLE DOES NOT EXIST??");
                 _ = cam;
-                _ = entities;
-                _ = myecs;
                 _ = st;
             }
         }.run,
-    } };
-    scene.addCamera(bundle);
-    return scene;
+    };
+    const registered = try ecs.systems.register(system);
+    state.current_camera = .{ handle.identifier, registered.@"0" };
+    return;
 }
 
-pub const RotateD6System = game.Ecs.System{ .query = game.Ecs.Query{ .is = game.Ecs.QueryStatement.new(.at_least, &[_]game.Ecs.ComponentsTag{.bundle}) }, .runFn = struct {
-    fn run(entities: []engine.ecs.Entity, myecs: *game.Ecs, state: *game.state.GameState) void {
-        const dt = rl.getFrameTime();
-        const rotation = rl.Matrix.rotateXYZ(rl.Vector3{
-            .x = 2.0 * dt,
-            .y = 2.0 * dt,
-            .z = 0.5 * dt,
-        });
+pub const RotateD6System = game.Ecs.System{
+    .queries = &[_]game.Ecs.Query{
+        game.Ecs.Query{
+            .query = .{
+                .is = game.Ecs.QueryStatement.new(
+                    .at_least,
+                    &[_]game.Ecs.ComponentsTag{.bundle},
+                ),
+            },
+        },
+    },
+    .schedule = .automatic,
+    .runFn = struct {
+        fn run(results: []game.Ecs.QueryResult, myecs: *game.Ecs, state: *game.state.GameState) void {
+            const dt = rl.getFrameTime();
+            const rotation = rl.Matrix.rotateXYZ(rl.Vector3{
+                .x = 2.0 * dt,
+                .y = 2.0 * dt,
+                .z = 0.5 * dt,
+            });
 
-        const e = entities[0];
-        const idx = myecs.entities.manager.index_map.get(e) orelse @panic("NO IDX?");
-        std.log.warn("Got idx: {d}\n", .{idx});
-        const bundle = myecs.components.access(engine.MeshBundle, .bundle, idx) orelse @panic("NO BUNDLE?");
+            const e = results[0].query[0];
+            const idx = myecs.entities.manager.index_map.get(e) orelse @panic("NO IDX?");
+            std.log.warn("Got idx: {d}\n", .{idx});
+            const bundle = myecs.components.access(engine.MeshBundle, .bundle, idx) orelse @panic("NO BUNDLE?");
 
-        bundle.transform = rl.Matrix.multiply(rotation, bundle.transform);
-        _ = state;
-    }
-}.run };
+            bundle.transform = rl.Matrix.multiply(rotation, bundle.transform);
+            _ = state;
+        }
+    }.run,
+};
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -70,12 +91,13 @@ pub fn main() !void {
     zbt.init(arena.allocator());
     defer zbt.deinit();
 
-    const state = game.state.GameState{
+    var state = game.state.GameState{
         .window_height = WINDOW_HEIGHT,
         .window_width = WINDOW_WIDTH,
     };
     defer state.deinit();
-    var scene = initScene();
+
+    try initScene(&ecs, &state);
 
     const numbers_atlas_texture = rl.loadTexture("resources/numbers.png") catch @panic("COULD NOT GET TEXTURE FROM ATLAS IMAGE");
 
@@ -109,24 +131,27 @@ pub fn main() !void {
 
     _ = d6_entity;
 
+    try state.update(&ecs);
+
     while (!rl.windowShouldClose()) {
-        try ecs.runSystems(&scene);
+        try ecs.runSystems(&state);
         rl.beginDrawing();
         rl.clearBackground(rl.Color.black);
         defer rl.endDrawing();
-        const camera =
-            scene.currentCamera().?.camera;
         // draw
-        {
-            rl.beginMode3D(camera);
-            defer rl.endMode3D();
+        //
+        try state.draw(&ecs);
+        //     {
 
-            rl.drawGrid(10, 1.0);
-            for (0..ecs.entities.manager.count) |idx| {
-                if (ecs.components.access(engine.MeshBundle, .bundle, idx)) |access_bundle| {
-                    access_bundle.draw();
-                }
-            }
-        }
+        //     rl.beginMode3D(camera);
+        //     defer rl.endMode3D();
+
+        //     rl.drawGrid(10, 1.0);
+        //     for (0..ecs.entities.manager.count) |idx| {
+        //         if (ecs.components.access(engine.MeshBundle, .bundle, idx)) |access_bundle| {
+        //             access_bundle.draw();
+        //         }
+        //     }
+        // }
     }
 }

@@ -22,7 +22,7 @@ const EcsOptions = engine.ecs.EcsOptions{
     .State = state.GameState,
     .components = &[_]engine.ecs.Component{
         .{ "bundle", engine.MeshBundle },
-        .{ "camera", rl.Camera3D },
+        .{ "camera", engine.CameraBundle },
         .{ "transform", rl.Matrix },
         .{ "shape", zbt.Shape },
         // SHOULD ONLY BE ONE ENTITY

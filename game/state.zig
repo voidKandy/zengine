@@ -22,7 +22,8 @@ pub const GameState = struct {
         position: rl.Vector3,
         target: rl.Vector3,
     } = null,
-    current_camera: ?engine.ecs.Entity = null,
+    /// Stores camera entity ID as well as it's associated system (if it has one)
+    current_camera: ?struct { u32, ?u32 } = null,
     // cameras: std.AutoHashMap(u32, rl.Camera3D),
     /// Maybe this is *BAD*?
     upward_face: ?u32 = null,
@@ -52,5 +53,73 @@ pub const GameState = struct {
             ph.world.deinit();
         }
         // self.pick.p2p.dealloc();
+    }
+
+    pub fn update(self: *@This(), ecs: *core.Ecs) !void {
+        _, const cam_system_id_opt = self.current_camera orelse @panic("NO CURRENT CAMERA!!");
+        if (cam_system_id_opt) |sys_id| {
+            const sys = ecs.systems.getData(sys_id) orelse @panic("NO SYSTEM WITH THAT ID?");
+            try ecs.runSystem(self, sys);
+        }
+    }
+    pub fn draw(self: @This(), ecs: *core.Ecs) !void {
+
+        // First, camera stuff
+        const camera_id, _ = self.current_camera orelse @panic("NO CURRENT CAMERA!!");
+        const camera_bundle = cam: {
+            const idx = ecs.entities.manager.index_map.get(camera_id) orelse @panic("NO CAMERA??");
+            break :cam ecs.components.access(engine.CameraBundle, .camera, idx) orelse @panic("NO CAMERA BUNDLE?");
+        };
+
+        rl.beginMode3D(camera_bundle.*.camera);
+        defer rl.endMode3D();
+
+        // Once the camera system has been run, we query for `MeshBundle`s
+        const bundle_sig = s: {
+            var s = core.Ecs.Signature.initEmpty();
+            s.set(@intFromEnum(core.Ecs.ComponentsTag.bundle));
+            break :s s;
+        };
+
+        const bundle_query_result =
+            try ecs.entities.queryEntities(ecs.allocator, core.Ecs.Query{ .query = .{ .is = core.Ecs.QueryStatement{ .rule = .at_least, .sig = bundle_sig } } });
+
+        if (bundle_query_result) |bundle_entities| {
+            // we draw any entities with a bundle
+            for (bundle_entities.query) |id| {
+                const idx = ecs.entities.manager.index_map.get(id) orelse std.debug.panic("Entity: {} Has no index?\n", .{id});
+                const bundle = ecs.components.access(engine.MeshBundle, .bundle, idx).?;
+                bundle.draw();
+            }
+        }
+
+        // draw the impulse line
+        if (self.object_impulse) |impulse| {
+            rl.drawCube(impulse.position, 0.1, 0.1, 0.1, rl.Color.ray_white);
+            rl.drawLine3D(impulse.position, impulse.target, rl.Color.red);
+        }
+
+        // draw a grid just cuz
+        rl.drawGrid(200, 5.0);
+
+        // draw physics debug lines
+        if (self.physics) |phys| {
+            const lines = phys.debug.lines.items;
+            var i: usize = 0;
+            while (i + 1 < lines.len) : (i += 2) {
+                const start = rl.Vector3{
+                    .x = lines[i].position[0],
+                    .y = lines[i].position[1],
+                    .z = lines[i].position[2],
+                };
+                const end = rl.Vector3{
+                    .x = lines[i + 1].position[0],
+                    .y = lines[i + 1].position[1],
+                    .z = lines[i + 1].position[2],
+                };
+                // const color = lines[i].color;
+                rl.drawLine3D(start, end, rl.Color.ray_white);
+            }
+        }
     }
 };

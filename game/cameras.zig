@@ -5,13 +5,6 @@ const zbt = @import("zbullet");
 const game = @import("root.zig");
 const engine = @import("engine_core");
 
-pub const CameraArchetype = archetype: {
-    var a = game.Ecs.Signature.initEmpty();
-    a.set(@intFromEnum(game.Ecs.ComponentsTag.camera));
-    // a.set(@intFromEnum(game.Ecs.ComponentsTag.transform));
-    break :archetype a;
-};
-
 // Tracks an entity marked with the `camera_track` component
 // ONLY ONE CAN BE MARKED WITH THIS
 // POTENTIALLY BAD!!
