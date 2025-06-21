@@ -16,7 +16,7 @@ const CAMERAS: usize = 8;
 
 pub const MAX_MESHES_PER_ENTITY: usize = 10;
 
-const EcsOptions = engine.ecs.EcsOptions{
+pub const Ecs = engine.ecs.Ecs(engine.ecs.EcsOptions{
     .max_entities = MAX_N_ENTITIES,
     .max_systems = MAX_N_SYSTEMS,
     .State = state.GameState,
@@ -37,9 +37,8 @@ const EcsOptions = engine.ecs.EcsOptions{
         // .{ "rigidbody", zbt.Body },
         .{ "body", i32 },
     },
-};
+});
 
-pub const Ecs = engine.ecs.Ecs(EcsOptions);
 pub const DEFAULT_CAMERA = rl.Camera3D{
     .position = rl.Vector3.init(10.0, 10.0, 10.0), // Camera position
     .target = rl.Vector3.init(0.0, 0.0, 0.0), // Camera looking at point
@@ -50,47 +49,4 @@ pub const DEFAULT_CAMERA = rl.Camera3D{
 
 test {
     std.testing.refAllDecls(@This());
-}
-
-test "scene" {
-    const allocator = std.testing.allocator;
-    var arena = std.heap.ArenaAllocator.init(allocator);
-    defer arena.deinit();
-    var ecs = Ecs.init(&arena);
-    defer ecs.deinit();
-
-    var gmstate = state.GameState{
-        .window_height = 100,
-        .window_width = 100,
-        // .pick = .{
-        //     .p2p = zbt.allocPoint2PointConstraint(),
-        // },
-    };
-
-    {
-        var entity_handle = try ecs.entities.register();
-
-        const camera = rl.Camera{
-            .position = rl.Vector3.init(0.0, 2.0, 4.0),
-            .target = rl.Vector3.init(0.0, 0.0, 0.0),
-            .up = rl.Vector3.init(0.0, 1.0, 0.0),
-            .fovy = 45.0,
-            .projection = rl.CameraProjection.perspective,
-        };
-
-        try entity_handle.addComponent(.camera, camera);
-        gmstate.current_camera = entity_handle.identifier;
-
-        // try scene.cameras.put(entity_handle.identifier, null);
-    }
-
-    // for (scene.cameras) |b| {
-    //     if (b == null) break;
-    //     _ = try ecs.systems.register(b.?.system);
-    // }
-
-    // std.debug.print(
-    //     \\ BUILT SCENE SUCCESSFULLY: {any}
-    //     \\
-    // , .{scene});
 }

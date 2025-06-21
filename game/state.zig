@@ -13,6 +13,8 @@ const zbt = @import("zbullet");
 /// ```
 // pub fn update(*core.CameraBundle) anyerror!void {}
 
+pub const CameraReference = struct { camera_id: u32, system_id: ?u32 = null };
+
 pub const GameState = struct {
     window_height: f32,
     window_width: f32,
@@ -23,7 +25,8 @@ pub const GameState = struct {
         target: rl.Vector3,
     } = null,
     /// Stores camera entity ID as well as it's associated system (if it has one)
-    current_camera: ?struct { u32, ?u32 } = null,
+    current_camera: ?usize,
+    cameras: std.ArrayList(CameraReference),
     // cameras: std.AutoHashMap(u32, rl.Camera3D),
     /// Maybe this is *BAD*?
     upward_face: ?u32 = null,
@@ -43,6 +46,7 @@ pub const GameState = struct {
     // }
 
     pub fn deinit(self: @This()) void {
+        defer self.cameras.deinit();
         if (self.physics) |ph| {
             const num_bodies = @as(usize, @intCast(ph.world.getNumBodies()));
             for (0..num_bodies) |_| {
@@ -56,18 +60,28 @@ pub const GameState = struct {
     }
 
     pub fn update(self: *@This(), ecs: *core.Ecs) !void {
-        _, const cam_system_id_opt = self.current_camera orelse @panic("NO CURRENT CAMERA!!");
-        if (cam_system_id_opt) |sys_id| {
-            const sys = ecs.systems.getData(sys_id) orelse @panic("NO SYSTEM WITH THAT ID?");
+        const cam_ref = self.cameras.items[self.current_camera orelse @panic("NO CURRENT CAMERA!!")];
+        std.log.warn(
+            \\ GOT CAM REF: {any}
+            \\
+        , .{cam_ref});
+        if (cam_ref.system_id) |sys_id| {
+            const sys = ecs.systems.getData(sys_id) orelse {
+                std.log.warn(
+                    \\ NO SYSTEM WITH ID: {d}
+                    \\
+                , .{sys_id});
+                @panic("");
+            };
             try ecs.runSystem(self, sys);
         }
     }
     pub fn draw(self: @This(), ecs: *core.Ecs) !void {
 
         // First, camera stuff
-        const camera_id, _ = self.current_camera orelse @panic("NO CURRENT CAMERA!!");
+        const cam_ref = self.cameras.items[self.current_camera orelse @panic("NO CURRENT CAMERA!!")];
         const camera_bundle = cam: {
-            const idx = ecs.entities.manager.index_map.get(camera_id) orelse @panic("NO CAMERA??");
+            const idx = ecs.entities.manager.index_map.get(cam_ref.camera_id) orelse @panic("NO CAMERA??");
             break :cam ecs.components.access(engine.CameraBundle, .camera, idx) orelse @panic("NO CAMERA BUNDLE?");
         };
 

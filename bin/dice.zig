@@ -10,8 +10,8 @@ const Vector3 = rl.Vector3;
 
 const WINDOW_WIDTH = 800;
 const WINDOW_HEIGHT = 450;
-/// assumes `zbt.init()` has been called
-fn initScene(ecs: *game.Ecs, state: *game.state.GameState) !void {
+
+fn initState(allocator: std.mem.Allocator, ecs: *game.Ecs) !game.state.GameState {
     const camera = rl.Camera{
         .position = rl.Vector3.init(0.0, 2.0, 4.0),
         .target = rl.Vector3.init(0.0, 0.0, 0.0),
@@ -39,9 +39,21 @@ fn initScene(ecs: *game.Ecs, state: *game.state.GameState) !void {
             }
         }.run,
     };
-    const registered = try ecs.systems.register(system);
-    state.current_camera = .{ handle.identifier, registered.@"0" };
-    return;
+    const sys_id, _ = try ecs.systems.register(system);
+
+    var cameras = std.ArrayList(game.state.CameraReference).init(allocator);
+    try cameras.append(game.state.CameraReference{
+        .camera_id = handle.identifier,
+        .system_id = sys_id,
+    });
+
+    const state = game.state.GameState{
+        .window_height = WINDOW_HEIGHT,
+        .window_width = WINDOW_WIDTH,
+        .current_camera = 0,
+        .cameras = cameras,
+    };
+    return state;
 }
 
 pub const RotateD6System = game.Ecs.System{
@@ -91,13 +103,9 @@ pub fn main() !void {
     zbt.init(arena.allocator());
     defer zbt.deinit();
 
-    var state = game.state.GameState{
-        .window_height = WINDOW_HEIGHT,
-        .window_width = WINDOW_WIDTH,
-    };
+    var state = try initState(arena.allocator(), &ecs);
     defer state.deinit();
-
-    try initScene(&ecs, &state);
+    std.log.warn("STATE STORED: {any}", .{state.cameras});
 
     const numbers_atlas_texture = rl.loadTexture("resources/numbers.png") catch @panic("COULD NOT GET TEXTURE FROM ATLAS IMAGE");
 
@@ -131,7 +139,9 @@ pub fn main() !void {
 
     _ = d6_entity;
 
+    std.log.warn("STATE STORED: {any}", .{state.cameras});
     try state.update(&ecs);
+    std.log.warn("STATE STORED: {any}", .{state.cameras});
 
     while (!rl.windowShouldClose()) {
         try ecs.runSystems(&state);
@@ -141,17 +151,5 @@ pub fn main() !void {
         // draw
         //
         try state.draw(&ecs);
-        //     {
-
-        //     rl.beginMode3D(camera);
-        //     defer rl.endMode3D();
-
-        //     rl.drawGrid(10, 1.0);
-        //     for (0..ecs.entities.manager.count) |idx| {
-        //         if (ecs.components.access(engine.MeshBundle, .bundle, idx)) |access_bundle| {
-        //             access_bundle.draw();
-        //         }
-        //     }
-        // }
     }
 }

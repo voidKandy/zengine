@@ -572,6 +572,11 @@ pub fn Ecs(
         components: ComponentsManager,
 
         pub fn init(arena: *std.heap.ArenaAllocator) ThisEcs {
+            if (!std.meta.hasFn(Options.State, "draw") or !std.meta.hasFn(Options.State, "update"))
+                @compileError(
+                    \\ State struct must have draw and update functions
+                );
+
             const alloc = arena.allocator();
             return ThisEcs{
                 .allocator = alloc,
