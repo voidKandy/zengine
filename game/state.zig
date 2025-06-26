@@ -24,6 +24,7 @@ pub const GameState = struct {
         position: rl.Vector3,
         target: rl.Vector3,
     } = null,
+    world: ?core.world.World = null,
     /// Stores camera entity ID as well as it's associated system (if it has one)
     current_camera: ?usize,
     cameras: std.ArrayList(CameraReference),
@@ -56,6 +57,7 @@ pub const GameState = struct {
             ph.debug.deinit();
             ph.world.deinit();
         }
+
         // self.pick.p2p.dealloc();
     }
 
@@ -94,6 +96,31 @@ pub const GameState = struct {
             s.set(@intFromEnum(core.Ecs.ComponentsTag.bundle));
             break :s s;
         };
+
+        if (self.world) |world| {
+            std.log.warn(
+                \\ Drawing world
+            , .{});
+
+            // For drawing the world boundaries in debug mode
+            const box_center = rl.Vector3.init(
+                (core.world.BOX_MIN + core.world.BOX_MAX) / 2.0,
+                (core.world.BOX_MIN + core.world.BOX_MAX) / 2.0,
+                (core.world.BOX_MIN + core.world.BOX_MAX) / 2.0,
+            );
+            const box_size = rl.Vector3.init(
+                core.world.BOX_MAX - core.world.BOX_MIN,
+                core.world.BOX_MAX - core.world.BOX_MIN,
+                core.world.BOX_MAX - core.world.BOX_MIN,
+            );
+
+            world.curve.draw();
+            for (world.polygons) |p| {
+                p.draw();
+            }
+            if (world.debug_mode)
+                rl.drawCubeWires(box_center, box_size.x, box_size.y, box_size.z, rl.Color.light_gray);
+        }
 
         const bundle_query_result =
             try ecs.entities.queryEntities(ecs.allocator, core.Ecs.Query{ .query = .{ .is = core.Ecs.QueryStatement{ .rule = .at_least, .sig = bundle_sig } } });

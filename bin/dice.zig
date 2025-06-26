@@ -19,9 +19,8 @@ fn initState(allocator: std.mem.Allocator, ecs: *game.Ecs) !game.state.GameState
         .fovy = 45.0,
         .projection = rl.CameraProjection.perspective,
     };
-    const transform = rl.Matrix.identity();
 
-    const bundle = engine.CameraBundle.init(camera, transform);
+    const bundle = engine.CameraBundle{ .camera = camera };
 
     var handle = try ecs.entities.register();
     try handle.addComponent(.camera, bundle);

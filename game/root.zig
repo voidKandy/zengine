@@ -2,6 +2,7 @@ const std = @import("std");
 pub const dice = @import("dice.zig");
 pub const player = @import("player.zig");
 pub const systems = @import("systems.zig");
+pub const world = @import("world.zig");
 pub const cameras = @import("cameras.zig");
 pub const state = @import("state.zig");
 const engine = @import("engine_core");
