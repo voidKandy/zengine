@@ -5,15 +5,16 @@ const zbt = @import("zbullet");
 const game = @import("root.zig");
 const engine = @import("engine_core");
 
-pub fn trackingCameraSystem(entity_to_track: engine.ecs.Entity) game.Ecs.System {
+/// We need an allocator so we can hold onto the query array as long as the system lives
+pub fn trackingCameraSystem(allocator: std.mem.Allocator, entity_to_track: engine.ecs.Entity) game.Ecs.System {
+    std.log.warn(
+        \\ CREATING CAMERA TRACK SYSTEM THAT TRACKS ENTITY WITH ID: {d}
+    , .{entity_to_track});
+    var queries = allocator.alloc(game.Ecs.Query, 1) catch @panic("could not initialize queries");
+    queries[0] = .{ .id = entity_to_track };
     return game.Ecs.System{
         .schedule = .explicit,
-        //
-        .queries = &[_]game.Ecs.Query{
-            // .{ .query = .{ .is = game.Ecs.QueryStatement.new(.exact, &[_]game.Ecs.ComponentsTag{.camera}) } },
-            .{ .id = entity_to_track },
-        },
-        //
+        .queries = queries,
         .runFn = struct {
             const MOUSE_SENSITIVITY: f32 = 0.005;
             var DISTANCE: f32 = 10.0;

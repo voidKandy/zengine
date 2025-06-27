@@ -79,7 +79,7 @@ fn IdentifierManager(
             };
         }
 
-        /// Returns a tuple of the `Identifier` (`u32`) and the index
+        /// Returns a tuple of the `Identifier` (`u32`) and the index of the registered data
         pub fn register(
             self: *Self,
             data: Data,
@@ -411,16 +411,20 @@ pub fn Ecs(
             pub fn queryEntities(self: *@This(), allocator: std.mem.Allocator, query: Query) std.mem.Allocator.Error!?QueryResult {
                 std.log.warn(
                     \\
-                    \\ Running Query
-                , .{});
+                    \\ Running Query {any}
+                , .{query});
                 // var all = std.ArrayList(QueryResult).init(allocator);
 
                 switch (query) {
                     .id => |entity_id| {
                         if (self.manager.index_map.get(entity_id)) |_|
-                            return QueryResult{ .id = entity_id }
-                        else
-                            return null;
+                            return QueryResult{ .id = entity_id };
+
+                        std.log.warn(
+                            \\
+                            \\ DIRECT QUERY RETURNED NO ENTITY FOR ID: {d}
+                        , .{entity_id});
+                        return null;
                     },
                     .query => |q| {
                         var entity_iter = self.manager.identifier_map.valueIterator();
@@ -431,12 +435,12 @@ pub fn Ecs(
 
                             var is_match = true;
                             if (q.is) |is| {
-                                std.log.warn(
-                                    \\
-                                    \\ Comparing sigs [IS]
-                                    \\ {b}
-                                    \\ {b}
-                                , .{ sig.mask, is.sig.mask });
+                                // std.log.warn(
+                                //     \\
+                                //     \\ Comparing sigs [IS]
+                                //     \\ {b}
+                                //     \\ {b}
+                                // , .{ sig.mask, is.sig.mask });
                                 is_match = is.rule.cmpFn()(sig, is.sig);
                             }
 

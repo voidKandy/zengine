@@ -258,13 +258,13 @@ pub fn main() anyerror!void {
         try handle.addComponent(.body, body_id);
     }
 
-    const d6track_system = game.cameras.trackingCameraSystem(d6_entity_id);
+    const d6track_system = game.cameras.trackingCameraSystem(arena.allocator(), d6_entity_id);
     const track_sys_id, _ = try ecs.systems.register(d6track_system);
 
     const camera =
         rl.Camera{
-            .position = rl.Vector3.zero(),
-            .target = rl.Vector3.init(1000.0, 1000.0, 0.0),
+            .position = rl.Vector3.init(10.0, 10.0, 0.0),
+            .target = rl.Vector3.zero(),
             .up = rl.Vector3.init(0.0, 1.0, 0.0),
             .fovy = 45.0,
             .projection = rl.CameraProjection.perspective,
@@ -282,6 +282,7 @@ pub fn main() anyerror!void {
         // _ = dt;
         _ = state.physics.?.world.stepSimulation(dt, .{});
         try ecs.runSystems(&state);
+        try state.update(&ecs);
 
         // Draw
         //---

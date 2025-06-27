@@ -71,6 +71,9 @@ pub const GameState = struct {
                 , .{sys_id});
                 @panic("");
             };
+            std.log.warn(
+                \\ RUNNING CAMERA SYSTEM
+            , .{});
             try ecs.runSystem(self, sys);
         }
     }
