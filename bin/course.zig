@@ -69,11 +69,14 @@ fn initState(allocator: std.mem.Allocator, ecs: *game.Ecs, rng: *std.Random.Defa
     }
 
     // Each polygon gets a camera positioned at the same position of the polygon but a little higher up on the y
-    const cam_y_offset = 10.0;
+    const cam_y_offset = 1.0;
+    const cam_x_offset = 5.0;
     for (world.polygons) |p| {
-        const position = rl.Vector3.init(p.position.x, p.position.y + cam_y_offset, p.position.z);
-        const target = rl.Vector3.zero();
-        const up = rl.Vector3.init(1.0, 0.0, 0.0);
+        const position = rl.Vector3.init(p.position.x + cam_x_offset, p.position.y + cam_y_offset, p.position.z);
+        // const target = rl.Vector3.zero();
+        const target = p.position;
+        // const target = world.curve.control;
+        const up = rl.Vector3.init(0.0, 1.0, 0.0);
 
         const camera = rl.Camera3D{
             .position = position,
