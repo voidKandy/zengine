@@ -20,10 +20,8 @@ fn initState(allocator: std.mem.Allocator, ecs: *game.Ecs) !game.state.GameState
         .projection = rl.CameraProjection.perspective,
     };
 
-    const bundle = engine.CameraBundle{ .camera = camera };
-
     var handle = try ecs.entities.register();
-    try handle.addComponent(.camera, bundle);
+    try handle.addComponent(.camera, camera);
 
     const system = game.Ecs.System{
         .schedule = .explicit,
@@ -32,7 +30,7 @@ fn initState(allocator: std.mem.Allocator, ecs: *game.Ecs) !game.state.GameState
             fn run(results: []game.Ecs.QueryResult, myecs: *game.Ecs, st: *game.state.GameState) void {
                 const camera_id = results[0].id;
                 const idx = myecs.entities.manager.index_map.get(camera_id) orelse @panic("CAMERA ENTITY DOES NOT EXIST??");
-                const cam = myecs.components.access(engine.CameraBundle, .camera, idx) orelse @panic("CAMERA BUNDLE DOES NOT EXIST??");
+                const cam = myecs.components.access(rl.Camera3D, .camera, idx) orelse @panic("CAMERA BUNDLE DOES NOT EXIST??");
                 _ = cam;
                 _ = st;
             }

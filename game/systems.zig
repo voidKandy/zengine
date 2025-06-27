@@ -66,13 +66,13 @@ pub fn CameraTrackingSystem(camera_id: engine.ecs.Entity) Ecs.System {
                 camera.target = target;
             }
 
-            fn run(entities: []engine.ecs.Entity, myecs: *Ecs, state: *game.state.GameState) void {
+            fn run(results: []game.Ecs.QueryResult, myecs: *Ecs, state: *game.state.GameState) void {
                 std.log.warn("IN TRACKING SYSTEM\n", .{});
-                const camera_entity = entities[0];
+                const camera_entity = results[0];
                 const cam_idx = myecs.entities.manager.index_map.get(camera_entity).?;
                 const camera = myecs.components.access(rl.Camera3D, .camera, cam_idx) orelse @panic("NO CAMERA??");
 
-                const followed_entity = entities[1];
+                const followed_entity = results[1];
                 // const camera = state.scene.currentCamera().?.camera;
                 const idx = myecs.entities.manager.index_map.get(followed_entity).?;
 
@@ -236,11 +236,12 @@ pub fn CameraTrackingSystem(camera_id: engine.ecs.Entity) Ecs.System {
 }
 
 pub const SyncPhysicsSystem = Ecs.System{
-    .queries = Ecs.Query{ .query = .{ .is = Ecs.QueryStatement.new(.at_least, &[_]Ecs.ComponentsTag{ .bundle, .body }) } },
+    .schedule = .automatic,
+    .queries = &[_]Ecs.Query{.{ .query = .{ .is = Ecs.QueryStatement.new(.at_least, &[_]Ecs.ComponentsTag{ .bundle, .body }) } }},
     .runFn = struct {
-        fn run(entities: []engine.ecs.Entity, myecs: *Ecs, state: *game.state.GameState) void {
+        fn run(results: []game.Ecs.QueryResult, myecs: *Ecs, state: *game.state.GameState) void {
             std.log.warn("IN SYNC SYSTEM\n", .{});
-            for (entities) |e| {
+            for (results[0].query) |e| {
                 const idx = myecs.entities.manager.index_map.get(e).?;
                 const bundle = myecs.components.access(engine.MeshBundle, .bundle, idx) orelse {
                     std.log.warn(

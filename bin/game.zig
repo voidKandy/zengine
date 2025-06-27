@@ -5,12 +5,13 @@ const engine = @import("engine_core");
 const game = @import("game_core");
 const zm = @import("zmath");
 const Vector3 = rl.Vector3;
-const Ecs = game.Ecs;
+const Ecs = game.GameEcs;
 
 const WINDOW_WIDTH = 1600;
 const WINDOW_HEIGHT = 900;
 
-fn initScene(allocator: std.mem.Allocator) !game.Ecs.Scene {
+fn initState(allocator: std.mem.Allocator, ecs: *game.Ecs) !game.Ecs.State {
+    _ = ecs;
     var physics_world = zbt.initWorld();
 
     const default_gravity: f32 = 10.0;
@@ -27,69 +28,71 @@ fn initScene(allocator: std.mem.Allocator) !game.Ecs.Scene {
             .world = physics_world,
             .debug = physics_debug,
         },
+        .current_camera = null,
+        .cameras = std.ArrayList(game.state.CameraReference).init(allocator),
     };
 
-    var scene = Ecs.Scene.init(state);
-    scene.addCamera(game.cameras.BundleTrackingCamera);
-    return scene;
+    // var scene = Ecs.Scene.init(state);
+    // scene.addCamera(game.cameras.BundleTrackingCamera);
+    return state;
 }
 
 /// Not **everything** has to be done in systems
 /// I have opted to use procedures for drawing logic
 /// This is because I would have to add complexity to systems to allow some to run during drawing
 /// instead, I have opted to keep systems in *just* the update loop
-fn draw(myecs: *Ecs, state: *game.state.GameState) void {
-    // myecs.entities.queryEntities(myecs.allocator, )
-    rl.beginMode3D(state.camera);
-    defer rl.endMode3D();
+// fn draw(myecs: *Ecs, state: *game.state.GameState) void {
+//     // myecs.entities.queryEntities(myecs.allocator, )
+//     rl.beginMode3D(state.camera);
+//     defer rl.endMode3D();
 
-    const bundle_sig = s: {
-        var s = Ecs.Signature.initEmpty();
-        s.set(@intFromEnum(Ecs.ComponentsTag.bundle));
-        break :s s;
-    };
+//     const bundle_sig = s: {
+//         var s = Ecs.Signature.initEmpty();
+//         s.set(@intFromEnum(Ecs.ComponentsTag.bundle));
+//         break :s s;
+//     };
 
-    if (state.object_impulse) |impulse| {
-        rl.drawCube(impulse.position, 0.1, 0.1, 0.1, rl.Color.ray_white);
-        rl.drawLine3D(impulse.position, impulse.target, rl.Color.red);
-    }
+//     if (state.object_impulse) |impulse| {
+//         rl.drawCube(impulse.position, 0.1, 0.1, 0.1, rl.Color.ray_white);
+//         rl.drawLine3D(impulse.position, impulse.target, rl.Color.red);
+//     }
 
-    for (0.., myecs.entities.manager.signatures) |i, sig| {
-        if (sig.supersetOf(bundle_sig)) {
-            const identifier = myecs.entities.manager.identifier_map.get(i) orelse break;
+//     for (0.., myecs.entities.manager.signatures) |i, sig| {
+//         if (sig.supersetOf(bundle_sig)) {
+//             const identifier = myecs.entities.manager.identifier_map.get(i) orelse break;
 
-            std.log.warn(
-                \\ Drawing Entity {}
-                \\
-            , .{identifier});
-            const idx = myecs.entities.manager.index_map.get(identifier) orelse std.debug.panic("Entity: {} Has no index?\n", .{identifier});
-            const bundle = myecs.components.access(engine.MeshBundle, .bundle, idx).?;
-            bundle.draw();
-        }
-    }
+//             std.log.warn(
+//                 \\ Drawing Entity {}
+//                 \\
+//             , .{identifier});
+//             const idx = myecs.entities.manager.index_map.get(identifier) orelse std.debug.panic("Entity: {} Has no index?\n", .{identifier});
+//             const bundle = myecs.components.access(engine.MeshBundle, .bundle, idx).?;
+//             bundle.draw();
+//         }
+//     }
 
-    rl.drawGrid(200, 5.0);
+//     rl.drawGrid(200, 5.0);
 
-    {
-        const lines = state.physics.?.debug.lines.items;
-        // const num_vertices = lines.len;
-        var i: usize = 0;
-        while (i + 1 < lines.len) : (i += 2) {
-            const start = rl.Vector3{
-                .x = lines[i].position[0],
-                .y = lines[i].position[1],
-                .z = lines[i].position[2],
-            };
-            const end = rl.Vector3{
-                .x = lines[i + 1].position[0],
-                .y = lines[i + 1].position[1],
-                .z = lines[i + 1].position[2],
-            };
-            // const color = lines[i].color;
-            rl.drawLine3D(start, end, rl.Color.ray_white);
-        }
-    }
-}
+//     {
+//         const lines = state.physics.?.debug.lines.items;
+//         // const num_vertices = lines.len;
+//         var i: usize = 0;
+//         while (i + 1 < lines.len) : (i += 2) {
+//             const start = rl.Vector3{
+//                 .x = lines[i].position[0],
+//                 .y = lines[i].position[1],
+//                 .z = lines[i].position[2],
+//             };
+//             const end = rl.Vector3{
+//                 .x = lines[i + 1].position[0],
+//                 .y = lines[i + 1].position[1],
+//                 .z = lines[i + 1].position[2],
+//             };
+//             // const color = lines[i].color;
+//             rl.drawLine3D(start, end, rl.Color.ray_white);
+//         }
+//     }
+// }
 
 fn createRoom(ecs: *Ecs, state: *game.state.GameState, size: f32) !struct {
     floor_shape: zbt.Shape,
@@ -142,7 +145,7 @@ pub fn main() anyerror!void {
     rl.setTargetFPS(60); // Set our game to run at 60 frames-per-second
 
     // ECS Setup
-    var ecs = Ecs.init(&arena);
+    var ecs = game.Ecs.init(&arena);
     defer ecs.deinit();
     // _ = try ecs.systems.register(game.systems.CameraTrackingSystem);
     _ = try ecs.systems.register(game.systems.SyncPhysicsSystem);
@@ -151,8 +154,8 @@ pub fn main() anyerror!void {
     //---
     zbt.init(arena.allocator());
     defer zbt.deinit();
-    var scene = try initScene(arena.allocator());
-    defer scene.deinit();
+    var state = try initState(arena.allocator(), &ecs);
+    defer state.deinit();
 
     // const room_shapes = try createRoom(&ecs, &state, 500.0);
     // defer {
@@ -184,8 +187,8 @@ pub fn main() anyerror!void {
         const shape = floor_shape.asShape();
         const body = engine.util.transformMassShapeToBody(transform, 0.0, shape);
         body.setRestitution(1.0);
-        const body_id = scene.state.physics.world.getNumBodies();
-        scene.state.physics.world.addBody(body);
+        const body_id = state.physics.?.world.getNumBodies();
+        state.physics.?.world.addBody(body);
         try handle.addComponent(.body, body_id);
     }
 
@@ -199,6 +202,7 @@ pub fn main() anyerror!void {
     defer d6shape.deinit();
 
     var d6_entity_idx: usize = undefined;
+    var d6_entity_id: u32 = undefined;
 
     // D6 ENTITY
     // ---
@@ -206,6 +210,7 @@ pub fn main() anyerror!void {
         var handle = try ecs.entities.register();
 
         d6_entity_idx = handle.index() orelse @panic("NO INDEX??");
+        d6_entity_id = handle.identifier;
         var inner_material = try rl.loadMaterialDefault();
         const shader = try rl.loadShader("resources/shaders/basic.vs", "resources/shaders/basic.fs");
         if (shader.id == 0) {
@@ -248,38 +253,43 @@ pub fn main() anyerror!void {
         body.setDamping(linear_damp, angular_damp);
         body.setMassProps(mass, &inertia);
 
-        const body_id = scene.state.physics.world.getNumBodies();
-        scene.state.physics.world.addBody(body);
+        const body_id = state.physics.?.world.getNumBodies();
+        state.physics.?.world.addBody(body);
         try handle.addComponent(.body, body_id);
-        try handle.addComponent(.camera_track, true);
     }
 
+    const d6track_system = game.cameras.trackingCameraSystem(d6_entity_id);
+    const track_sys_id, _ = try ecs.systems.register(d6track_system);
+
+    const camera =
+        rl.Camera{
+            .position = rl.Vector3.zero(),
+            .target = rl.Vector3.init(1000.0, 1000.0, 0.0),
+            .up = rl.Vector3.init(0.0, 1.0, 0.0),
+            .fovy = 45.0,
+            .projection = rl.CameraProjection.perspective,
+        };
+
+    var handle = try ecs.entities.register();
+    try handle.addComponent(.camera, camera);
+    try state.cameras.append(game.state.CameraReference{ .camera_id = handle.identifier, .system_id = track_sys_id });
+    state.current_camera = 0;
     // Main game loop
     while (!rl.windowShouldClose()) {
         // Update
         //----------------------------------------------------------------------------------
         const dt = rl.getFrameTime();
         // _ = dt;
-        _ = scene.state.physics.world.stepSimulation(dt, .{});
-        try ecs.runSystems(&scene.state);
+        _ = state.physics.?.world.stepSimulation(dt, .{});
+        try ecs.runSystems(&state);
 
         // Draw
         //---
         rl.beginDrawing();
         defer rl.endDrawing();
         rl.clearBackground(rl.Color.black);
+        try state.draw(&ecs);
 
-        scene.state.physics.world.debugDrawAll();
-        draw(&ecs, &scene.state);
-        scene.state.physics.debug.lines.clearRetainingCapacity();
-
-        if (scene.state.object_impulse) |_| {
-            rl.drawText("Press [P] to push the object", 50, 50, 10, rl.Color.green);
-        }
-        if (scene.state.upward_face) |face| {
-            const text = try std.fmt.allocPrintZ(arena.allocator(), "Upward face: {}", .{face});
-            rl.drawText(text, 100, 100, 10, rl.Color.green);
-        }
         rl.drawFPS(10, 10);
     }
 }

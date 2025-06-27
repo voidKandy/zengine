@@ -5,14 +5,6 @@ const rl = @import("raylib");
 const std = @import("std");
 const zbt = @import("zbullet");
 
-/// Each of the below functions are provided by the game to
-/// encapsulate specific needed camera behavior.
-/// To be used as the `_update` field in`core.CameraBundle`
-/// ```
-/// _update: *const fn (@This()) anyerror!void,
-/// ```
-// pub fn update(*core.CameraBundle) anyerror!void {}
-
 pub const CameraReference = struct { camera_id: u32, system_id: ?u32 = null };
 
 pub const GameState = struct {
@@ -46,6 +38,10 @@ pub const GameState = struct {
     //     }
     // }
 
+    pub fn currentCamera(self: @This()) ?CameraReference {
+        const idx = self.current_camera orelse return null;
+        return self.cameras.items[idx];
+    }
     pub fn deinit(self: @This()) void {
         defer self.cameras.deinit();
         if (self.physics) |ph| {
@@ -62,7 +58,7 @@ pub const GameState = struct {
     }
 
     pub fn update(self: *@This(), ecs: *core.Ecs) !void {
-        const cam_ref = self.cameras.items[self.current_camera orelse @panic("NO CURRENT CAMERA!!")];
+        const cam_ref = self.currentCamera() orelse @panic("NO CAMERA??");
         std.log.warn(
             \\ GOT CAM REF: {any}
             \\
@@ -84,10 +80,10 @@ pub const GameState = struct {
         const cam_ref = self.cameras.items[self.current_camera orelse @panic("NO CURRENT CAMERA!!")];
         const camera_bundle = cam: {
             const idx = ecs.entities.manager.index_map.get(cam_ref.camera_id) orelse @panic("NO CAMERA??");
-            break :cam ecs.components.access(engine.CameraBundle, .camera, idx) orelse @panic("NO CAMERA BUNDLE?");
+            break :cam ecs.components.access(rl.Camera3D, .camera, idx) orelse @panic("NO CAMERA BUNDLE?");
         };
 
-        rl.beginMode3D(camera_bundle.*.camera);
+        rl.beginMode3D(camera_bundle.*);
         defer rl.endMode3D();
 
         // Once the camera system has been run, we query for `MeshBundle`s
@@ -136,8 +132,14 @@ pub const GameState = struct {
 
         // draw the impulse line
         if (self.object_impulse) |impulse| {
+            rl.drawText("Press [P] to push the object", 50, 50, 10, rl.Color.green);
             rl.drawCube(impulse.position, 0.1, 0.1, 0.1, rl.Color.ray_white);
             rl.drawLine3D(impulse.position, impulse.target, rl.Color.red);
+        }
+
+        if (self.upward_face) |face| {
+            const text = try std.fmt.allocPrintZ(ecs.allocator, "Upward face: {}", .{face});
+            rl.drawText(text, 100, 100, 10, rl.Color.green);
         }
 
         // draw a grid just cuz

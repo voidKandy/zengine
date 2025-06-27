@@ -12,6 +12,15 @@ const WINDOW_WIDTH = 800;
 const WINDOW_HEIGHT = 600;
 
 fn initState(allocator: std.mem.Allocator, ecs: *game.Ecs, rng: *std.Random.DefaultPrng) !game.state.GameState {
+    var physics_world = zbt.initWorld();
+
+    const default_gravity: f32 = 10.0;
+    physics_world.setGravity(&.{ 0.0, -default_gravity, 0.0 });
+    var physics_debug = try allocator.create(zbt.DebugDrawer);
+    physics_debug.* = zbt.DebugDrawer.init(allocator);
+    physics_world.debugSetDrawer(&physics_debug.getDebugDraw());
+    physics_world.debugSetMode(.{ .draw_wireframe = true, .draw_aabb = true });
+
     const world = try game.world.World.generate(allocator, rng);
 
     const static_cam_system = game.Ecs.System{
@@ -23,7 +32,7 @@ fn initState(allocator: std.mem.Allocator, ecs: *game.Ecs, rng: *std.Random.Defa
             fn run(results: []game.Ecs.QueryResult, myecs: *game.Ecs, st: *game.state.GameState) void {
                 const camera_id = results[0].id;
                 const idx = myecs.entities.manager.index_map.get(camera_id) orelse @panic("CAMERA ENTITY DOES NOT EXIST??");
-                const cam = myecs.components.access(engine.CameraBundle, .camera, idx) orelse @panic("CAMERA BUNDLE DOES NOT EXIST??");
+                const cam = myecs.components.access(rl.Camera3D, .camera, idx) orelse @panic("CAMERA BUNDLE DOES NOT EXIST??");
                 _ = cam;
                 _ = st;
             }
@@ -48,7 +57,7 @@ fn initState(allocator: std.mem.Allocator, ecs: *game.Ecs, rng: *std.Random.Defa
             };
 
         var handle = try ecs.entities.register();
-        try handle.addComponent(.camera, engine.CameraBundle{ .camera = camera, .active = true });
+        try handle.addComponent(.camera, camera);
         try cameras.append(game.state.CameraReference{ .camera_id = handle.identifier, .system_id = static_sys_id });
     }
 
@@ -64,18 +73,16 @@ fn initState(allocator: std.mem.Allocator, ecs: *game.Ecs, rng: *std.Random.Defa
             };
 
         var handle = try ecs.entities.register();
-        try handle.addComponent(.camera, engine.CameraBundle{ .camera = camera });
+        try handle.addComponent(.camera, camera);
         try cameras.append(game.state.CameraReference{ .camera_id = handle.identifier, .system_id = static_sys_id });
     }
 
-    // Each polygon gets a camera positioned at the same position of the polygon but a little higher up on the y
+    // Each polygon gets a camera looking at the position of that poly
     const cam_y_offset = 1.0;
     const cam_x_offset = 5.0;
     for (world.polygons) |p| {
         const position = rl.Vector3.init(p.position.x + cam_x_offset, p.position.y + cam_y_offset, p.position.z);
-        // const target = rl.Vector3.zero();
         const target = p.position;
-        // const target = world.curve.control;
         const up = rl.Vector3.init(0.0, 1.0, 0.0);
 
         const camera = rl.Camera3D{
@@ -87,7 +94,7 @@ fn initState(allocator: std.mem.Allocator, ecs: *game.Ecs, rng: *std.Random.Defa
         };
 
         var handle = try ecs.entities.register();
-        try handle.addComponent(.camera, engine.CameraBundle{ .camera = camera });
+        try handle.addComponent(.camera, camera);
         try cameras.append(game.state.CameraReference{ .camera_id = handle.identifier, .system_id = static_sys_id });
     }
 
@@ -96,6 +103,10 @@ fn initState(allocator: std.mem.Allocator, ecs: *game.Ecs, rng: *std.Random.Defa
         .window_width = WINDOW_WIDTH,
         .current_camera = 0,
         .cameras = cameras,
+        .physics = .{
+            .world = physics_world,
+            .debug = physics_debug,
+        },
         .world = world,
     };
 
@@ -123,14 +134,6 @@ pub fn main() !void {
 
     zbt.init(arena.allocator());
     defer zbt.deinit();
-    var physics_world = zbt.initWorld();
-
-    const default_gravity: f32 = 10.0;
-    physics_world.setGravity(&.{ 0.0, -default_gravity, 0.0 });
-    var physics_debug = try arena.allocator().create(zbt.DebugDrawer);
-    physics_debug.* = zbt.DebugDrawer.init(arena.allocator());
-    physics_world.debugSetDrawer(&physics_debug.getDebugDraw());
-    physics_world.debugSetMode(.{ .draw_wireframe = true, .draw_aabb = true });
 
     var rng = std.Random.DefaultPrng.init(blk: {
         var seed: u64 = undefined;

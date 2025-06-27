@@ -4,7 +4,6 @@ pub const ecs = @import("ecs.zig");
 pub const util = @import("util.zig");
 pub const noise = @import("noise.zig");
 pub const MeshBundle = @import("MeshBundle.zig");
-pub const CameraBundle = @import("CameraBundle.zig");
 const Type = std.builtin.Type;
 const Entity = ecs.Entity;
 

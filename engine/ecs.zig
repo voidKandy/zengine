@@ -574,7 +574,7 @@ pub fn Ecs(
         pub fn init(arena: *std.heap.ArenaAllocator) ThisEcs {
             if (!std.meta.hasFn(Options.State, "draw") or !std.meta.hasFn(Options.State, "update"))
                 @compileError(
-                    \\ State struct must have draw and update functions
+                    \\ State struct must have PUBLIC draw and update functions
                 );
 
             const alloc = arena.allocator();
@@ -649,7 +649,10 @@ test "ECS Entity Management" {
         \\
     , .{});
 
-    const State = struct {};
+    const State = struct {
+        pub fn draw() void {}
+        pub fn update() void {}
+    };
     const MyEcs = Ecs(.{
         .max_entities = 5,
         .max_systems = 5,
@@ -780,18 +783,54 @@ test "ECS Entity Management" {
             }
         }.run,
     };
+    // const OtherSystem = MyEcs.System{
+    //     .queries = &[_]MyEcs.Query{.{ .query = .{ .is = statement: {
+    //         var s = MyEcs.QueryStatement.new(.at_least, &[_]MyEcs.ComponentsTag{.othercomponent});
+    //         try s.withValidation(u8, struct {
+    //             fn isValid(v: u8) bool {
+    //                 return v == 64;
+    //             }
+    //         }.isValid);
+    //         break :statement s;
+    //     } } }},
+    //     .schedule = .automatic,
+    //     .runFn = struct {
+    //         fn run(results: []MyEcs.QueryResult, myecs: *MyEcs, state: *State) void {
+    //             _ = state;
+    //             warn("IN OTHER SYSTEM\n", .{});
+    //             for (results) |r| {
+    //                 for (r.query) |e| {
+    //                     warn("MUTATING ENTITY: {}", .{e});
+    //                     const idx = myecs.entities.manager.index_map.get(e) orelse @panic("ENTITY SHOULD HAVE AN INDEX?");
+    //                     const v = myecs.components.access(u8, .othercomponent, idx) orelse @panic("SHOULD HAVE THIS COMPONENT?");
+    //                     warn("VAL: {}", .{v.*});
+    //                     const new: u8 = 49;
+    //                     myecs.components.insert(myecs.allocator, .othercomponent, idx, new) catch @panic("FAILED TO INSERT COMPONENT");
+    //                 }
+    //             }
+    //         }
+    //     }.run,
+    // };
 
     _ = try ecs.systems.register(SomeSystem);
+    // _ = try ecs.systems.register(OtherSystem);
 
     var state = State{};
     try ecs.runSystems(&state);
 
-    for ([_]MyEcs.EntityManager.EntityHandle{entity_b}) |e| {
-        const got = ecs.components.access(u32, MyEcs.ComponentsTag.someothercomponent, e.index().?) orelse @panic("Nothing at that index");
+    {
+        const got = ecs.components.access(u32, MyEcs.ComponentsTag.someothercomponent, entity_b.index().?) orelse @panic("Nothing at that index");
         try std.testing.expectEqual(
             1111,
             got.*,
         );
     }
+    // {
+    //     const got = ecs.components.access(u8, MyEcs.ComponentsTag.othercomponent, entity_c.index().?) orelse @panic("Nothing at that index");
+    //     try std.testing.expectEqual(
+    //         49,
+    //         got.*,
+    //     );
+    // }
     std.debug.print("ENTITY MANAGEMENT WORKS AS EXPECTED\n", .{});
 }

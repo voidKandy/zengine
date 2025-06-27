@@ -23,11 +23,11 @@ pub const Ecs = engine.ecs.Ecs(engine.ecs.EcsOptions{
     .State = state.GameState,
     .components = &[_]engine.ecs.Component{
         .{ "bundle", engine.MeshBundle },
-        .{ "camera", engine.CameraBundle },
+        .{ "camera", rl.Camera3D },
         .{ "transform", rl.Matrix },
         .{ "shape", zbt.Shape },
         // SHOULD ONLY BE ONE ENTITY
-        .{ "camera_track", bool },
+        // .{ "camera_track", bool },
         // Should also only be one entity
         // .{ "impulse_point", struct { position: rl.Vector3, direction: rl.Vector3 } },
         // REMOVE THIS!!
