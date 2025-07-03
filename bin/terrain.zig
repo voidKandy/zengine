@@ -60,7 +60,11 @@ pub fn main() !void {
     const texture = try rl.loadTextureFromImage(image);
     defer rl.unloadTexture(texture);
 
-    const mesh = rl.genMeshHeightmap(image, rl.Vector3.init(16.0, 8.0, 16.0));
+    var mesh = try genMeshHeightmap(arena.allocator(), image, rl.Vector3.init(16.0, 8.0, 16.0));
+
+    rl.uploadMesh(&mesh, true);
+    // defer rl.unloadMesh(mesh);
+
     var material = try rl.loadMaterialDefault();
     material.maps[0].texture = texture;
     var position = rl.Matrix.identity();
@@ -90,4 +94,111 @@ pub fn main() !void {
 
         rl.drawFPS(10, 10);
     }
+}
+
+fn genMeshHeightmap(
+    allocator: std.mem.Allocator,
+    heightmap: rl.Image,
+    size: rl.Vector3,
+) !rl.Mesh {
+    const width: usize = @intCast(heightmap.width);
+    const height: usize = @intCast(heightmap.height);
+
+    const colors = try rl.loadImageColors(heightmap);
+    defer rl.unloadImageColors(colors);
+
+    // Precompute scaling
+    const step_x: f32 = size.x / @as(f32, @floatFromInt(width - 1));
+    const step_z: f32 = size.z / @as(f32, @floatFromInt(height - 1));
+
+    // Arrays for mesh data
+    var vertices = std.ArrayList(rl.Vector3).init(allocator);
+    // defer vertices.deinit();
+
+    var normals = std.ArrayList(rl.Vector3).init(allocator);
+    // defer normals.deinit();
+
+    var uvs = std.ArrayList(rl.Vector2).init(allocator);
+    // defer uvs.deinit();
+
+    var indices = std.ArrayList(u16).init(allocator);
+    // defer indices.deinit();
+
+    // Generate vertices, normals, uvs
+    for (0..height) |z_idx| {
+        for (0..width) |x_idx| {
+            const idx = z_idx * width + x_idx;
+            const pixel = colors[idx];
+
+            const height_value = @as(f32, @floatFromInt(pixel.r)) / 255.0;
+            const y = height_value * size.y;
+
+            const x = @as(f32, @floatFromInt(x_idx)) * step_x;
+            const z = @as(f32, @floatFromInt(z_idx)) * step_z;
+
+            try vertices.append(.{ .x = x, .y = y, .z = z });
+            try normals.append(.{ .x = 0, .y = 1, .z = 0 }); // Up normals (basic)
+            try uvs.append(.{
+                .x = @as(f32, @floatFromInt(x_idx)) / @as(f32, @floatFromInt(width - 1)),
+                .y = @as(f32, @floatFromInt(z_idx)) / @as(f32, @floatFromInt(height - 1)),
+            });
+        }
+    }
+
+    // Generate indices for triangle grid
+    for (0..height - 1) |z_idx| {
+        for (0..width - 1) |x_idx| {
+            const i_0: u16 = @intCast(z_idx * width + x_idx);
+            const i_1: u16 = @intCast(z_idx * width + x_idx + 1);
+            const i_2: u16 = @intCast((z_idx + 1) * width + x_idx);
+            const i_3: u16 = @intCast((z_idx + 1) * width + x_idx + 1);
+
+            // Triangle 1
+            try indices.append(i_0);
+            try indices.append(i_2);
+            try indices.append(i_1);
+
+            // Triangle 2
+            try indices.append(i_1);
+            try indices.append(i_2);
+            try indices.append(i_3);
+        }
+    }
+
+    // Allocate Mesh
+    var mesh = try allocator.create(rl.Mesh);
+    mesh.* = std.mem.zeroInit(rl.Mesh, .{});
+
+    // Assign data
+    mesh.*.vertices = @as([*]f32, @ptrCast(try allocator.alloc(f32, vertices.items.len * 3)));
+    mesh.*.normals = @as([*]f32, @ptrCast(try allocator.alloc(f32, normals.items.len * 3)));
+    mesh.*.texcoords = @as([*]f32, @ptrCast(try allocator.alloc(f32, uvs.items.len * 2)));
+    mesh.*.indices = @as([*]u16, @ptrCast(try allocator.alloc(u16, indices.items.len)));
+
+    // Fill vertex data
+    for (vertices.items, 0..) |v, i| {
+        mesh.vertices[i * 3 + 0] = v.x;
+        mesh.vertices[i * 3 + 1] = v.y;
+        mesh.vertices[i * 3 + 2] = v.z;
+    }
+    for (normals.items, 0..) |n, i| {
+        mesh.normals[i * 3 + 0] = n.x;
+        mesh.normals[i * 3 + 1] = n.y;
+        mesh.normals[i * 3 + 2] = n.z;
+    }
+    for (uvs.items, 0..) |uv, i| {
+        mesh.texcoords[i * 2 + 0] = uv.x;
+        mesh.texcoords[i * 2 + 1] = uv.y;
+    }
+    std.mem.copyForwards(u16, mesh.indices[0..indices.items.len], indices.items);
+
+    mesh.*.vertexCount = @as(c_int, @intCast(vertices.items.len));
+    mesh.*.triangleCount = @as(c_int, @intCast(indices.items.len / 3));
+
+    std.log.warn(
+        \\ MESH GENERATED: {any}
+        \\
+    , .{mesh});
+
+    return mesh.*;
 }
