@@ -31,68 +31,8 @@ fn initState(allocator: std.mem.Allocator, ecs: *game.Ecs) !game.Ecs.State {
         .current_camera = null,
         .cameras = std.ArrayList(game.state.CameraReference).init(allocator),
     };
-
-    // var scene = Ecs.Scene.init(state);
-    // scene.addCamera(game.cameras.BundleTrackingCamera);
     return state;
 }
-
-/// Not **everything** has to be done in systems
-/// I have opted to use procedures for drawing logic
-/// This is because I would have to add complexity to systems to allow some to run during drawing
-/// instead, I have opted to keep systems in *just* the update loop
-// fn draw(myecs: *Ecs, state: *game.state.GameState) void {
-//     // myecs.entities.queryEntities(myecs.allocator, )
-//     rl.beginMode3D(state.camera);
-//     defer rl.endMode3D();
-
-//     const bundle_sig = s: {
-//         var s = Ecs.Signature.initEmpty();
-//         s.set(@intFromEnum(Ecs.ComponentsTag.bundle));
-//         break :s s;
-//     };
-
-//     if (state.object_impulse) |impulse| {
-//         rl.drawCube(impulse.position, 0.1, 0.1, 0.1, rl.Color.ray_white);
-//         rl.drawLine3D(impulse.position, impulse.target, rl.Color.red);
-//     }
-
-//     for (0.., myecs.entities.manager.signatures) |i, sig| {
-//         if (sig.supersetOf(bundle_sig)) {
-//             const identifier = myecs.entities.manager.identifier_map.get(i) orelse break;
-
-//             std.log.warn(
-//                 \\ Drawing Entity {}
-//                 \\
-//             , .{identifier});
-//             const idx = myecs.entities.manager.index_map.get(identifier) orelse std.debug.panic("Entity: {} Has no index?\n", .{identifier});
-//             const bundle = myecs.components.access(engine.MeshBundle, .bundle, idx).?;
-//             bundle.draw();
-//         }
-//     }
-
-//     rl.drawGrid(200, 5.0);
-
-//     {
-//         const lines = state.physics.?.debug.lines.items;
-//         // const num_vertices = lines.len;
-//         var i: usize = 0;
-//         while (i + 1 < lines.len) : (i += 2) {
-//             const start = rl.Vector3{
-//                 .x = lines[i].position[0],
-//                 .y = lines[i].position[1],
-//                 .z = lines[i].position[2],
-//             };
-//             const end = rl.Vector3{
-//                 .x = lines[i + 1].position[0],
-//                 .y = lines[i + 1].position[1],
-//                 .z = lines[i + 1].position[2],
-//             };
-//             // const color = lines[i].color;
-//             rl.drawLine3D(start, end, rl.Color.ray_white);
-//         }
-//     }
-// }
 
 fn createRoom(ecs: *Ecs, state: *game.state.GameState, size: f32) !struct {
     floor_shape: zbt.Shape,

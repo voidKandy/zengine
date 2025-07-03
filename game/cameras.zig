@@ -5,7 +5,54 @@ const zbt = @import("zbullet");
 const game = @import("root.zig");
 const engine = @import("engine_core");
 
+/// System that makes the current camera orbit around it's target
+/// In it's current form, this will only work as intended if it is the ONLY camera system registered
+pub const ORBITAL_CAMERA_SYSTEM = game.Ecs.System{
+    .schedule = .explicit,
+    .queries = null,
+    .runFn = struct {
+        var angle: f32 = 0.0;
+        var speed: f32 = 1.0;
+        var height: f32 = 5.0;
+        /// Rather than using an `initialized` flag, we can just check if this value is null
+        /// The radius of the orbit will be calculated the first time the system is run and it will just be
+        /// how far the camera is from the target
+        var radius: ?f32 = null;
+        fn run(results: []game.Ecs.QueryResult, myecs: *game.Ecs, st: *game.state.GameState) void {
+            _ = results;
+            const dt = rl.getFrameTime();
+
+            const camera_id = st.currentCamera().?.camera_id;
+            const cam_idx = myecs.entities.manager.index_map.get(camera_id) orelse @panic("CAMERA ENTITY DOES NOT EXIST??");
+            const camera = myecs.components.access(rl.Camera3D, .camera, cam_idx) orelse @panic("CAMERA BUNDLE DOES NOT EXIST??");
+
+            if (radius == null) {
+                const dx = camera.position.x - camera.target.x;
+                // const dy = camera.position.y - camera.target.y;
+                const dz = camera.position.z - camera.target.z;
+                radius = @sqrt(dx * dx + dz * dz);
+                height = camera.position.y - camera.target.y;
+            }
+
+            // increment orbit angle
+            angle += speed * dt;
+            if (angle > std.math.tau) {
+                angle -= std.math.tau;
+            }
+
+            // calculate new camera position
+            const x = camera.target.x + @cos(angle) * radius.?;
+            const y = camera.target.y + height;
+            const z = camera.target.z + @sin(angle) * radius.?;
+
+            camera.position = rl.Vector3{ .x = x, .y = y, .z = z };
+        }
+    }.run,
+};
+
 /// We need an allocator so we can hold onto the query array as long as the system lives
+/// Tracks an entity with the camera, allowing impulses to be applied to the entity
+/// > Assumes the entity has a `MeshBundle` and a Physics Body
 pub fn trackingCameraSystem(allocator: std.mem.Allocator, entity_to_track: engine.ecs.Entity) game.Ecs.System {
     std.log.warn(
         \\ CREATING CAMERA TRACK SYSTEM THAT TRACKS ENTITY WITH ID: {d}

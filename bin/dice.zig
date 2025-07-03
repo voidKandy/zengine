@@ -142,6 +142,7 @@ pub fn main() !void {
 
     while (!rl.windowShouldClose()) {
         try ecs.runSystems(&state);
+        try state.update(&ecs);
         rl.beginDrawing();
         rl.clearBackground(rl.Color.black);
         defer rl.endDrawing();

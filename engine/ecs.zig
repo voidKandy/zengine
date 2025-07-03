@@ -555,13 +555,21 @@ pub fn Ecs(
                 return @intFromEnum(self) == @intFromEnum(@This().automatic);
             }
         };
+
+        /// If `ECS` finds no enities matching `queries`, the system will not run
+        /// If `queries` field is null, the system will run regardless
         pub const System = struct {
             disabled: bool = false,
             schedule: SysSchedule,
-            queries: []const Query,
+            queries: ?[]const Query,
             /// Each `QueryResult` in this function corresponds to each `Query` for the given system
             runFn: SystemFn,
         };
+
+        /// Arguments are as follows:
+        /// *Results* of queries in order the queries are passed in the System's `queries` field
+        /// Reference to *Ecs*
+        /// Reference to *State*
         const SystemFn = *const fn ([]QueryResult, *ThisEcs, *Options.State) void;
 
         const SystemManager = IdentifierManager(Options.max_systems, System);
@@ -601,17 +609,21 @@ pub fn Ecs(
                 var all: [Options.max_entities]QueryResult = undefined;
                 var amt: usize = 0;
 
-                for (system.queries) |q| {
-                    if (try self.entities.queryEntities(self.allocator, q)) |result| {
-                        all[amt] = result;
-                        amt += 1;
+                if (system.queries) |qs| {
+                    for (qs) |q| {
+                        if (try self.entities.queryEntities(self.allocator, q)) |result| {
+                            all[amt] = result;
+                            amt += 1;
+                        }
                     }
                 }
 
                 break :queries all[0..amt];
             };
 
-            if (results.len > 0) {
+            const should_run = results.len > 0 or system.queries == null;
+
+            if (should_run) {
                 std.log.warn(
                     \\
                     \\ Got Entities Matching: {any}
