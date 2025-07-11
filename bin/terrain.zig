@@ -54,13 +54,81 @@ pub fn main() !void {
     var state = try initState(arena.allocator(), &ecs);
     defer state.deinit();
 
-    const image = try rl.loadImage("resources/heightmap.png");
+    var image = try rl.loadImage("resources/heightmap.png");
     defer rl.unloadImage(image);
+    std.log.warn(
+        \\ IMAGE FORMAT: {any}
+        \\
+    , .{image.format});
+
+    rl.imageFormat(&image, rl.PixelFormat.uncompressed_r8g8b8a8);
+
+    const mask = &[_]rl.Vector2{
+
+        //     rl.Vector2{
+        //     .x = 0.0,
+        //     .y = 0.0,
+        // },
+
+        rl.Vector2{
+            .x = 0.5,
+            .y = 0.5,
+        },
+        rl.Vector2{
+            .x = -0.5,
+            .y = 0.5,
+        },
+        rl.Vector2{
+            .x = -0.5,
+            .y = -0.5,
+        },
+        rl.Vector2{
+            .x = 0.5,
+            .y = -0.5,
+        },
+    };
+
+    {
+        const width: usize = @intCast(image.width);
+        const height: usize = @intCast(image.height);
+
+        var pixels = @as([*]rl.Color, @ptrCast(image.data));
+
+        // Build your polygon vertex list in mask space
+        var mask_vertices = std.ArrayList(rl.Vector2).init(allocator);
+        defer mask_vertices.deinit();
+
+        // Masks, defined in normalized space, need to be translated to pixel space for accurate mapping over the original image
+        for (mask) |v| {
+            try mask_vertices.append(rl.Vector2{
+                .x = ((v.x * 0.5) + 0.5) * @as(f32, @floatFromInt(width - 1)),
+                .y = ((-v.y * 0.5) + 0.5) * @as(f32, @floatFromInt(height - 1)), // <-- flip Y!
+            });
+        }
+
+        // Loop through every pixel
+        for (0..height) |y_px| {
+            for (0..width) |x_px| {
+                const p = rl.Vector2{
+                    .x = @floatFromInt(x_px),
+                    .y = @floatFromInt(y_px),
+                };
+
+                if (!engine.util.pointInPolygon(p, mask_vertices.items)) {
+                    const idx = y_px * width + x_px;
+                    pixels[idx] = rl.Color.black;
+                    pixels[idx].a = 0;
+                }
+            }
+        }
+    }
 
     const texture = try rl.loadTextureFromImage(image);
     defer rl.unloadTexture(texture);
 
-    var mesh = try genMeshHeightmap(arena.allocator(), image, rl.Vector3.init(16.0, 8.0, 16.0));
+    const mesh_size =
+        rl.Vector3.init(16.0, 8.0, 16.0);
+    var mesh = try genMaskedImageMesh(arena.allocator(), image, mesh_size, null, 16);
 
     rl.uploadMesh(&mesh, true);
     // defer rl.unloadMesh(mesh);
@@ -90,28 +158,41 @@ pub fn main() !void {
         try state.draw(&ecs);
 
         rl.drawTexture(texture, WINDOW_WIDTH - texture.width - 20, 20, rl.Color.white);
+        rl.drawTriangleFan(mask, rl.Color.red);
         rl.drawRectangleLines(WINDOW_WIDTH - texture.width - 20, 20, texture.width, texture.height, rl.Color.green);
 
         rl.drawFPS(10, 10);
     }
 }
 
-fn genMeshHeightmap(
+//
+// ---
+// # Terrain stuff
+//      !WIP!
+//  likely should be abstracted later
+//
+
+/// Outermost mesh generation from Image
+/// Should not create vertices where the pixel alpha == 0
+fn genMaskedImageMesh(
     allocator: std.mem.Allocator,
     heightmap: rl.Image,
     size: rl.Vector3,
+    mask: ?[]rl.Vector2,
+    sampling_resolution: usize,
 ) !rl.Mesh {
+    _ = sampling_resolution;
+    _ = mask;
     const width: usize = @intCast(heightmap.width);
     const height: usize = @intCast(heightmap.height);
 
     const colors = try rl.loadImageColors(heightmap);
+
     defer rl.unloadImageColors(colors);
 
-    // Precompute scaling
-    const step_x: f32 = size.x / @as(f32, @floatFromInt(width - 1));
+    const step_x: f32 = (size.x / @as(f32, @floatFromInt(width - 1)));
     const step_z: f32 = size.z / @as(f32, @floatFromInt(height - 1));
 
-    // Arrays for mesh data
     var vertices = std.ArrayList(rl.Vector3).init(allocator);
     // defer vertices.deinit();
 
@@ -124,13 +205,41 @@ fn genMeshHeightmap(
     var indices = std.ArrayList(u16).init(allocator);
     // defer indices.deinit();
 
-    // Generate vertices, normals, uvs
     for (0..height) |z_idx| {
         for (0..width) |x_idx| {
-            const idx = z_idx * width + x_idx;
-            const pixel = colors[idx];
+            const idx00 = .{ x_idx, z_idx };
+            const idx10 = .{ x_idx + 1, z_idx };
+            const idx01 = .{ x_idx, z_idx + 1 };
+            const idx11 = .{ x_idx + 1, z_idx + 1 };
 
-            const height_value = @as(f32, @floatFromInt(pixel.r)) / 255.0;
+            const color = avg: {
+                // var c = rl.Color.black;
+                var c_r: u32 = 0;
+                var c_g: u32 = 0;
+                var c_b: u32 = 0;
+                // var c_a: u32 = 0;
+                for (&[_]struct { usize, usize }{ idx00, idx10, idx01, idx11 }) |idcs| {
+                    const x, const z = idcs;
+                    const clamped_x = @min(x, width - 1);
+                    const clamped_z = @min(z, height - 1);
+                    const idx = clamped_z * width + clamped_x;
+                    const pixel = colors[idx];
+                    c_r += @intCast(pixel.r);
+                    c_g += @intCast(pixel.g);
+                    c_b += @intCast(pixel.b);
+                    // c.a += pixel.a;
+                }
+                c_r /= 4;
+                c_g /= 4;
+                c_b /= 4;
+
+                // c.a += 4;
+                break :avg rl.Color{ .r = @intCast(c_r), .g = @intCast(c_g), .b = @intCast(c_b), .a = 255 };
+            };
+
+            if (color.a == 0) continue;
+
+            const height_value = @as(f32, @floatFromInt(color.r)) / 255.0;
             const y = height_value * size.y;
 
             const x = @as(f32, @floatFromInt(x_idx)) * step_x;

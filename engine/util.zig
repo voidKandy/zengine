@@ -3,6 +3,32 @@ const std = @import("std");
 const zbt = @import("zbullet");
 const zm = @import("zmath");
 
+/// uses ray-casting to check if a point is within a polygon.
+/// This will cast a ray from the point **TO THE RIGHT** and check if it intersects the polygon.
+/// If it intersects the polygon an **ODD** number of times, the point is inside the polygon
+/// If it intersects the polygon an **EVEN** number of times, the point is outside the polygon
+/// As usual, vertices should be passed in either clockwise or counter clockwise order
+pub fn pointInPolygon(p: rl.Vector2, vertices: []rl.Vector2) bool {
+    var inside = false;
+    var j = vertices.len - 1;
+    for (vertices, 0..) |vi, i| {
+        const vj = vertices[j];
+
+        if ((vi.y > p.y) != (vj.y > p.y)) {
+            const intersect_x =
+                (vj.x - vi.x) * (p.y - vi.y) / (vj.y - vi.y) + vi.x;
+
+            if (p.x < intersect_x) {
+                inside = !inside;
+            }
+        }
+
+        j = i;
+    }
+
+    return inside;
+}
+
 /// **Position** = (x = m12, y = m13, z = m14)
 /// ```
 /// | m0  m4  m8   m12 |
@@ -236,4 +262,26 @@ test "line segment intersection tests" {
         \\ Line Segment Intersection Tests PASSED
         \\
     , .{});
+}
+
+test "point in polygon" {
+    const allocator = std.testing.allocator;
+    const point = rl.Vector2{
+        .x = 0.0,
+        .y = 0.0,
+    };
+
+    var vertices = std.ArrayList(rl.Vector2).init(allocator);
+    defer vertices.deinit();
+
+    for (&[_]rl.Vector2{
+        .{ .x = -1.0, .y = 1.0 },
+        .{ .x = 1.0, .y = 1.0 },
+        .{ .x = 1.0, .y = -1.0 },
+        .{ .x = -1.0, .y = -1.0 },
+    }) |v| {
+        try vertices.append(v);
+    }
+
+    try std.testing.expectEqual(true, pointInPolygon(point, vertices.items));
 }
