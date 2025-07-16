@@ -64,30 +64,17 @@ pub fn main() !void {
     rl.imageFormat(&image, rl.PixelFormat.uncompressed_r8g8b8a8);
 
     const mask = &[_]rl.Vector2{
-
-        //     rl.Vector2{
-        //     .x = 0.0,
-        //     .y = 0.0,
-        // },
-
-        rl.Vector2{
-            .x = 0.5,
-            .y = 0.5,
+        .{
+            .x = 0.0,
+            .y = 0.0,
         },
-        rl.Vector2{
-            .x = -0.5,
-            .y = 0.5,
-        },
-        rl.Vector2{
-            .x = -0.5,
-            .y = -0.5,
-        },
-        rl.Vector2{
-            .x = 0.5,
-            .y = -0.5,
-        },
+        .{ .x = 0.5, .y = 0.5 },
+        .{ .x = -0.5, .y = 0.5 },
+        // .{ .x = -0.7, .y = 0.0 },
+        .{ .x = -0.5, .y = -0.5 },
+        .{ .x = 0.5, .y = -0.5 },
+        .{ .x = 0.5, .y = 0.5 },
     };
-
     {
         const width: usize = @intCast(image.width);
         const height: usize = @intCast(image.height);
@@ -126,8 +113,50 @@ pub fn main() !void {
     const texture = try rl.loadTextureFromImage(image);
     defer rl.unloadTexture(texture);
 
+    // this is the rectangle that represents the texture to be mapped over the mask
+    const rect_w: i32 = texture.width;
+    const rect_h: i32 = texture.height;
+
+    // WINDOW_WIDTH - texture.width - 20, 20
+    const rect_x: i32 = WINDOW_WIDTH - texture.width - 20;
+    // const rect_y: i32 = WINDOW_HEIGHT / 2 - @divTrunc(rect_h, 2) - texture.width - 20;
+    const rect_y = 20;
+
+    // We need to translate the normalized mask into screen space based on the position of the rectangle defined above
+    var screen_mask: [mask.len]rl.Vector2 = undefined;
+
+    for (mask, 0..) |v, i| {
+        const rect_x_fl: f32 = @floatFromInt(rect_x);
+        const rect_y_fl: f32 = @floatFromInt(rect_y);
+        const rect_w_fl: f32 = @floatFromInt(rect_w);
+        const rect_h_fl: f32 = @floatFromInt(rect_h);
+
+        // Three steps to translating:
+        // _First_: Add 1.0 to normalized coordinates (because -1.0 and 1.0 are the lower and upper bounds of our norm space)
+        // _Second_: Divide the result of step one by 2 to renormalize w/out any negatives
+        // _Third_: Subtract the resulting Y value from 1.0 (because the Y needs to be flipped to align with raylib)
+        const translated_x = (v.x + 1.0) / 2.0;
+        const translated_y = 1.0 - ((v.y + 1.0) / 2.0);
+        screen_mask[i] = rl.Vector2{
+            .x = rect_x_fl + translated_x * rect_w_fl,
+            .y = rect_y_fl + translated_y * rect_h_fl,
+        };
+    }
+
+    // if uncommented, move this block BEFORE `texture` is instantiated
+
     const mesh_size =
         rl.Vector3.init(16.0, 8.0, 16.0);
+
+    const heightmap = try allocator.alloc(engine.terrain.Pixel, 256 * 256);
+    defer allocator.free(heightmap);
+
+    @memset(heightmap, engine.terrain.Pixel{
+        .r = 255,
+        .g = 255,
+        .b = 255,
+    });
+    // var mesh = try engine.terrain.genMaskedImageMesh(arena.allocator(), heightmap, mesh_size, mask, 2);
     var mesh = try genMaskedImageMesh(arena.allocator(), image, mesh_size, null, 16);
 
     rl.uploadMesh(&mesh, true);
@@ -158,8 +187,12 @@ pub fn main() !void {
         try state.draw(&ecs);
 
         rl.drawTexture(texture, WINDOW_WIDTH - texture.width - 20, 20, rl.Color.white);
-        rl.drawTriangleFan(mask, rl.Color.red);
-        rl.drawRectangleLines(WINDOW_WIDTH - texture.width - 20, 20, texture.width, texture.height, rl.Color.green);
+        // rl.drawTriangleFan(mask, rl.Color.red);
+
+        rl.drawRectangleLines(rect_x, rect_y, rect_w, rect_h, rl.Color.green);
+
+        // rl.drawTriangleStrip(&screen_mask, rl.Color.red);
+        // rl.drawTriangleFan(&screen_mask, rl.Color.red);
 
         rl.drawFPS(10, 10);
     }
@@ -237,7 +270,10 @@ fn genMaskedImageMesh(
                 break :avg rl.Color{ .r = @intCast(c_r), .g = @intCast(c_g), .b = @intCast(c_b), .a = 255 };
             };
 
-            if (color.a == 0) continue;
+            // if (color.a == 0 and
+            //     color.r == rl.Color.black.r and
+            //     color.g == rl.Color.black.g and
+            //     color.b == rl.Color.black.b) continue;
 
             const height_value = @as(f32, @floatFromInt(color.r)) / 255.0;
             const y = height_value * size.y;

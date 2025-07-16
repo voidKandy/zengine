@@ -32,6 +32,9 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("engine/root.zig"),
         .target = target,
         .optimize = optimize,
+        // allows us to run tests by name
+        // https://ziggit.dev/t/how-to-filter-test-using-test-filter-test-name-in-conjunction-with-build-zig/5609/3
+        .filters = b.args orelse &.{},
     });
 
     // lib_unit_tests.root_module.addImport("engine_core", engine_core_lib);
