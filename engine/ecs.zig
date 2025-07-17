@@ -192,15 +192,126 @@ pub fn Ecs(
         /// ```
         pub const Signature = std.bit_set.IntegerBitSet(@intCast(Options.components.len));
         pub const ComponentsTag = ComponentsManager.Tag;
-        /// Returns the signature associated with the given components
-        pub fn componentsSignature(query: []ComponentsTag) Signature {
+
+        /// Systems tagged `automatic` will be run always, during the `runSystems` function
+        /// Systems tagged `explicit` will only run if they are run somehow in user space
+        pub const SysSchedule = enum {
+            automatic,
+            explicit,
+            fn isAuto(self: @This()) bool {
+                return @intFromEnum(self) == @intFromEnum(@This().automatic);
+            }
+        };
+
+        /// If `ECS` finds no enities matching `queries`, the system will not run
+        /// If `queries` field is null, the system will run regardless
+        pub const System = struct {
+            disabled: bool = false,
+            schedule: SysSchedule,
+            queries: ?[]const Query,
+            /// Each `QueryResult` in this function corresponds to each `Query` for the given system
+            runFn: SystemFn,
+        };
+
+        /// Arguments are as follows:
+        /// *Results* of queries in order the queries are passed in the System's `queries` field
+        /// Reference to *Ecs*
+        /// Reference to *State*
+        const SystemFn = *const fn ([]QueryResult, *ThisEcs, *Options.State) void;
+
+        const SystemManager = IdentifierManager(Options.max_systems, System);
+
+        /// this is an allocator returned by `ArenaAllocator.allocator()`
+        allocator: Allocator,
+        entities: EntityManager,
+        /// Systems are currently run sequentially before draw calls
+        /// * less than ideal * ?
+        /// `System` struct are given pre-filtered entities
+        systems: SystemManager,
+        components: ComponentsManager,
+
+        pub fn init(arena: *std.heap.ArenaAllocator) ThisEcs {
+            const alloc = arena.allocator();
+            return ThisEcs{
+                .allocator = alloc,
+                .entities = EntityManager.init(alloc),
+                .systems = SystemManager.init(alloc) catch @panic("FAILED to initialize Systems Manager"),
+                .components = ComponentsManager.init(),
+            };
+        }
+
+        pub fn deinit(self: *ThisEcs) void {
+            self.entities.manager.deinit(self.allocator);
+            self.systems.deinit(self.allocator);
+            self.components.deinit(self.allocator);
+        }
+
+        pub fn runSystem(self: *ThisEcs, state: *ThisEcs.State, system: System) !void {
+            const results = queries: {
+                var all: [Options.max_entities]QueryResult = undefined;
+                var amt: usize = 0;
+
+                if (system.queries) |qs| {
+                    for (qs) |q| {
+                        if (try self.queryEntities(self.allocator, q)) |result| {
+                            all[amt] = result;
+                            amt += 1;
+                        }
+                    }
+                }
+
+                break :queries all[0..amt];
+            };
+
+            const should_run = results.len > 0 or system.queries == null;
+
+            if (should_run) {
+                std.log.warn(
+                    \\
+                    \\ Got Entities Matching: {any}
+                , .{results});
+                system.runFn(results, self, state);
+            } else {
+                std.log.warn(
+                    \\
+                    \\ No Entities Matching
+                , .{});
+            }
+        }
+
+        pub fn runSystems(self: *ThisEcs, state: *ThisEcs.State) !void {
+            std.log.warn(
+                \\
+                \\ Running Systems
+            , .{});
+            var systems_iter =
+                self.systems.identifier_map.valueIterator();
+            while (systems_iter.next()) |id| {
+                const system = self.systems.getData(id.*) orelse return error.NoData;
+                if (system.disabled or !system.schedule.isAuto()) continue;
+                try self.runSystem(state, system);
+            }
+        }
+
+        pub fn entityHandle(self: *ThisEcs, entity: Entity) EntityManager.EntityHandle {
+            return EntityManager.EntityHandle{ .ecs = self, .identifier = entity };
+        }
+        /// Returns the signature associated with the given component
+        pub fn componentSignature(tag: ComponentsTag) Signature {
             var sig = Signature.initEmpty();
-            for (query) |c| {
+            sig.set(@intFromEnum(tag));
+            return sig;
+        }
+        /// Returns the signature associated with the given component
+        pub fn componentsSignature(tags: []ComponentsTag) Signature {
+            var sig = Signature.initEmpty();
+            for (tags) |c| {
                 sig.set(@intFromEnum(c));
             }
             return sig;
         }
 
+        /// Returns the signature associated with the given components
         pub inline fn signatureComponents(signature: Signature) []ComponentsTag {
             var all: [Options.components.len]ComponentsTag = undefined;
             var amt: usize = 0;
@@ -215,6 +326,84 @@ pub fn Ecs(
         pub inline fn componentType(variant: ComponentsTag) type {
             const idx = @intFromEnum(variant);
             return Options.components[idx].@"1";
+        }
+
+        pub fn queryEntities(self: *ThisEcs, allocator: std.mem.Allocator, query: Query) !?QueryResult {
+            std.log.warn(
+                \\
+                \\ Running Query {any}
+                \\
+            , .{query});
+
+            var all = std.ArrayList(Entity).init(allocator);
+            // First, we get a result based purely on which type/tag the entity matches
+            get_entities: {
+                switch (query) {
+                    .id => |entity_id| {
+                        std.log.warn(
+                            \\ ALL ENTITIES:
+                            \\ {any}
+                        , .{self.entities.manager.lastRegistered()});
+                        if (self.entities.manager.index_map.get(entity_id)) |_| {
+                            try all.append(entity_id);
+                            break :get_entities;
+                        }
+
+                        std.log.warn(
+                            \\
+                            \\ DIRECT QUERY RETURNED NO ENTITY FOR ID: {d}
+                        , .{entity_id});
+                        break :get_entities;
+                    },
+                    .query => |q| {
+                        var entity_iter = self.entities.manager.identifier_map.valueIterator();
+                        while (entity_iter.next()) |entity| {
+                            const idx = self.entities.manager.index_map.get(entity.*) orelse @panic("NO INDEX FOR ENTITY??");
+                            const sig = self.entities.manager.data[idx] orelse @panic("NO SIGNATURE FOR ENTITY??");
+
+                            var is_match = true;
+                            if (q.is) |is| {
+                                // std.log.warn(
+                                //     \\
+                                //     \\ Comparing sigs [IS]
+                                //     \\ {b}
+                                //     \\ {b}
+                                // , .{ sig.mask, is.sig.mask });
+                                is_match = is.rule.cmpFn()(sig, is.sig);
+                            }
+
+                            var is_not_match = false;
+                            if (q.is_not) |is_not| {
+                                std.log.warn(
+                                    \\
+                                    \\ Comparing sigs [IS NOT]
+                                    \\ {b}
+                                    \\ {b}
+                                , .{ sig.mask, is_not.sig.mask });
+
+                                is_not_match = is_not.rule.cmpFn()(sig, is_not.sig);
+                            }
+
+                            if (is_match and !is_not_match) {
+                                try all.append(entity.*);
+                            }
+                        }
+                        if (all.items.len > 0)
+                            break :get_entities;
+                    },
+                }
+            }
+
+            if (all.items.len == 0)
+                return null;
+
+            switch (query) {
+                .id => {
+                    std.debug.assert(all.items.len <= 1);
+                    return QueryResult{ .id = query.id };
+                },
+                .query => return QueryResult{ .query = try all.toOwnedSlice() },
+            }
         }
 
         pub const QueryRule = enum {
@@ -248,9 +437,12 @@ pub fn Ecs(
             }
         };
 
+        pub const ComponentRule =
+            struct { ComponentsTag, *anyopaque };
         pub const QueryStatement = struct {
             rule: QueryRule,
             sig: Signature,
+            // component_rules: ?[]const ComponentRule = null,
             pub fn new(rule: QueryRule, components: []const ComponentsTag) @This() {
                 return .{ .rule = rule, .sig = componentsSignature(@constCast(components)) };
             }
@@ -408,67 +600,6 @@ pub fn Ecs(
                 };
             }
 
-            pub fn queryEntities(self: *@This(), allocator: std.mem.Allocator, query: Query) std.mem.Allocator.Error!?QueryResult {
-                std.log.warn(
-                    \\
-                    \\ Running Query {any}
-                , .{query});
-                // var all = std.ArrayList(QueryResult).init(allocator);
-
-                switch (query) {
-                    .id => |entity_id| {
-                        if (self.manager.index_map.get(entity_id)) |_|
-                            return QueryResult{ .id = entity_id };
-
-                        std.log.warn(
-                            \\
-                            \\ DIRECT QUERY RETURNED NO ENTITY FOR ID: {d}
-                        , .{entity_id});
-                        return null;
-                    },
-                    .query => |q| {
-                        var entity_iter = self.manager.identifier_map.valueIterator();
-                        var all = std.ArrayList(Entity).init(allocator);
-                        while (entity_iter.next()) |entity| {
-                            const idx = self.manager.index_map.get(entity.*) orelse @panic("NO INDEX FOR ENTITY??");
-                            const sig = self.manager.data[idx] orelse @panic("NO SIGNATURE FOR ENTITY??");
-
-                            var is_match = true;
-                            if (q.is) |is| {
-                                // std.log.warn(
-                                //     \\
-                                //     \\ Comparing sigs [IS]
-                                //     \\ {b}
-                                //     \\ {b}
-                                // , .{ sig.mask, is.sig.mask });
-                                is_match = is.rule.cmpFn()(sig, is.sig);
-                            }
-
-                            var is_not_match = false;
-                            if (q.is_not) |is_not| {
-                                std.log.warn(
-                                    \\
-                                    \\ Comparing sigs [IS NOT]
-                                    \\ {b}
-                                    \\ {b}
-                                , .{ sig.mask, is_not.sig.mask });
-
-                                is_not_match = is_not.rule.cmpFn()(sig, is_not.sig);
-                            }
-
-                            if (is_match and !is_not_match) {
-                                try all.append(entity.*);
-                            }
-                        }
-                        if (all.items.len > 0)
-                            return QueryResult{ .query = try all.toOwnedSlice() }
-                        else
-                            all.deinit();
-                    },
-                }
-                return null;
-            }
-
             /// Returns the function by which `Entity`s are compared according to a `Query`'s rule
             /// Helper struct for easily managing any components associated with an entity
             const EntityHandle = struct {
@@ -545,111 +676,6 @@ pub fn Ecs(
                 }
             };
         };
-
-        /// Systems tagged `automatic` will be run always, during the `runSystems` function
-        /// Systems tagged `explicit` will only run if they are run somehow in user space
-        pub const SysSchedule = enum {
-            automatic,
-            explicit,
-            fn isAuto(self: @This()) bool {
-                return @intFromEnum(self) == @intFromEnum(@This().automatic);
-            }
-        };
-
-        /// If `ECS` finds no enities matching `queries`, the system will not run
-        /// If `queries` field is null, the system will run regardless
-        pub const System = struct {
-            disabled: bool = false,
-            schedule: SysSchedule,
-            queries: ?[]const Query,
-            /// Each `QueryResult` in this function corresponds to each `Query` for the given system
-            runFn: SystemFn,
-        };
-
-        /// Arguments are as follows:
-        /// *Results* of queries in order the queries are passed in the System's `queries` field
-        /// Reference to *Ecs*
-        /// Reference to *State*
-        const SystemFn = *const fn ([]QueryResult, *ThisEcs, *Options.State) void;
-
-        const SystemManager = IdentifierManager(Options.max_systems, System);
-
-        /// this is an allocator returned by `ArenaAllocator.allocator()`
-        allocator: Allocator,
-        entities: EntityManager,
-        /// Systems are currently run sequentially before draw calls
-        /// * less than ideal * ?
-        /// `System` struct are given pre-filtered entities
-        systems: SystemManager,
-        components: ComponentsManager,
-
-        pub fn init(arena: *std.heap.ArenaAllocator) ThisEcs {
-            if (!std.meta.hasFn(Options.State, "draw") or !std.meta.hasFn(Options.State, "update"))
-                @compileError(
-                    \\ State struct must have PUBLIC draw and update functions
-                );
-
-            const alloc = arena.allocator();
-            return ThisEcs{
-                .allocator = alloc,
-                .entities = EntityManager.init(alloc),
-                .systems = SystemManager.init(alloc) catch @panic("FAILED to initialize Systems Manager"),
-                .components = ComponentsManager.init(),
-            };
-        }
-
-        pub fn deinit(self: *ThisEcs) void {
-            self.entities.manager.deinit(self.allocator);
-            self.systems.deinit(self.allocator);
-            self.components.deinit(self.allocator);
-        }
-
-        pub fn runSystem(self: *ThisEcs, state: *ThisEcs.State, system: System) !void {
-            const results = queries: {
-                var all: [Options.max_entities]QueryResult = undefined;
-                var amt: usize = 0;
-
-                if (system.queries) |qs| {
-                    for (qs) |q| {
-                        if (try self.entities.queryEntities(self.allocator, q)) |result| {
-                            all[amt] = result;
-                            amt += 1;
-                        }
-                    }
-                }
-
-                break :queries all[0..amt];
-            };
-
-            const should_run = results.len > 0 or system.queries == null;
-
-            if (should_run) {
-                std.log.warn(
-                    \\
-                    \\ Got Entities Matching: {any}
-                , .{results});
-                system.runFn(results, self, state);
-            } else {
-                std.log.warn(
-                    \\
-                    \\ No Entities Matching
-                , .{});
-            }
-        }
-
-        pub fn runSystems(self: *ThisEcs, state: *ThisEcs.State) !void {
-            std.log.warn(
-                \\
-                \\ Running Systems
-            , .{});
-            var systems_iter =
-                self.systems.identifier_map.valueIterator();
-            while (systems_iter.next()) |id| {
-                const system = self.systems.getData(id.*) orelse return error.NoData;
-                if (system.disabled or !system.schedule.isAuto()) continue;
-                try self.runSystem(state, system);
-            }
-        }
     };
 }
 

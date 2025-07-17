@@ -12,7 +12,7 @@ const zbt = @import("zbullet");
 // pub const Die = dice.xd("resources/numbers.png");
 
 const MAX_N_ENTITIES: usize = 1024;
-const MAX_N_SYSTEMS: usize = 1024;
+const MAX_N_SYSTEMS: usize = 8;
 const CAMERAS: usize = 8;
 
 pub const MAX_MESHES_PER_ENTITY: usize = 10;

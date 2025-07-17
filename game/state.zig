@@ -122,7 +122,7 @@ pub const GameState = struct {
         }
 
         const bundle_query_result =
-            try ecs.entities.queryEntities(ecs.allocator, core.Ecs.Query{ .query = .{ .is = core.Ecs.QueryStatement{ .rule = .at_least, .sig = bundle_sig } } });
+            try ecs.queryEntities(ecs.allocator, core.Ecs.Query{ .query = .{ .is = core.Ecs.QueryStatement{ .rule = .at_least, .sig = bundle_sig } } });
 
         if (bundle_query_result) |bundle_entities| {
             // we draw any entities with a bundle

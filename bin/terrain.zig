@@ -11,6 +11,42 @@ const Vector3 = rl.Vector3;
 const WINDOW_WIDTH = 800;
 const WINDOW_HEIGHT = 600;
 
+/// COPY PASTE Of RotateD6System
+pub const RotateTerrain = game.Ecs.System{
+    .queries = &[_]game.Ecs.Query{
+        game.Ecs.Query{
+            .query = .{
+                .is = game.Ecs.QueryStatement.new(
+                    .at_least,
+                    &[_]game.Ecs.ComponentsTag{.bundle},
+                ),
+            },
+        },
+    },
+    .schedule = .automatic,
+    .runFn = struct {
+        fn run(results: []game.Ecs.QueryResult, myecs: *game.Ecs, state: *game.state.GameState) void {
+            const dt = rl.getFrameTime();
+            const rotation = rl.Matrix.rotateXYZ(rl.Vector3{
+                // .x = 2.0 * dt,
+                .x = 0.0,
+                .y = 0.5 * dt,
+                .z = 0.0,
+                // .y = 0.5 * dt,
+                // .z = 1.5 * dt,
+            });
+
+            const e = results[0].query[0];
+            const idx = myecs.entities.manager.index_map.get(e) orelse @panic("NO IDX?");
+            std.log.warn("Got idx: {d}\n", .{idx});
+            const bundle = myecs.components.access(engine.MeshBundle, .bundle, idx) orelse @panic("NO BUNDLE?");
+
+            bundle.transform = rl.Matrix.multiply(rotation, bundle.transform);
+            _ = state;
+        }
+    }.run,
+};
+
 fn initState(allocator: std.mem.Allocator, ecs: *game.Ecs) !game.state.GameState {
     const camera = rl.Camera{
         .position = rl.Vector3.init(18.0, 21.0, 18.0),
@@ -22,12 +58,12 @@ fn initState(allocator: std.mem.Allocator, ecs: *game.Ecs) !game.state.GameState
 
     var handle = try ecs.entities.register();
     try handle.addComponent(.camera, camera);
-    const sys_id, _ = try ecs.systems.register(game.cameras.ORBITAL_CAMERA_SYSTEM);
+    // const sys_id, _ = try ecs.systems.register(game.cameras.ORBITAL_CAMERA_SYSTEM);
 
     var cameras = std.ArrayList(game.state.CameraReference).init(allocator);
     try cameras.append(game.state.CameraReference{
         .camera_id = handle.identifier,
-        .system_id = sys_id,
+        // .system_id = sys_id,
     });
 
     const state = game.state.GameState{
@@ -53,21 +89,22 @@ pub fn main() !void {
     defer ecs.deinit();
     var state = try initState(arena.allocator(), &ecs);
     defer state.deinit();
+    _ = try ecs.systems.register(RotateTerrain);
 
-    var image = try rl.loadImage("resources/heightmap.png");
+    const image = try rl.loadImage("resources/heightmap.png");
     defer rl.unloadImage(image);
     std.log.warn(
         \\ IMAGE FORMAT: {any}
         \\
     , .{image.format});
 
-    rl.imageFormat(&image, rl.PixelFormat.uncompressed_r8g8b8a8);
+    // rl.imageFormat(&image, rl.PixelFormat.uncompressed_r8g8b8a8);
 
     const mask = &[_]rl.Vector2{
-        .{
-            .x = 0.0,
-            .y = 0.0,
-        },
+        // .{
+        //     .x = 0.0,
+        //     .y = 0.0,
+        // },
         .{ .x = 0.5, .y = 0.5 },
         .{ .x = -0.5, .y = 0.5 },
         // .{ .x = -0.7, .y = 0.0 },
@@ -75,40 +112,40 @@ pub fn main() !void {
         .{ .x = 0.5, .y = -0.5 },
         .{ .x = 0.5, .y = 0.5 },
     };
-    {
-        const width: usize = @intCast(image.width);
-        const height: usize = @intCast(image.height);
+    // {
+    //     const width: usize = @intCast(image.width);
+    //     const height: usize = @intCast(image.height);
 
-        var pixels = @as([*]rl.Color, @ptrCast(image.data));
+    //     var pixels = @as([*]rl.Color, @ptrCast(image.data));
 
-        // Build your polygon vertex list in mask space
-        var mask_vertices = std.ArrayList(rl.Vector2).init(allocator);
-        defer mask_vertices.deinit();
+    //     // Build your polygon vertex list in mask space
+    //     var mask_vertices = std.ArrayList(rl.Vector2).init(allocator);
+    //     defer mask_vertices.deinit();
 
-        // Masks, defined in normalized space, need to be translated to pixel space for accurate mapping over the original image
-        for (mask) |v| {
-            try mask_vertices.append(rl.Vector2{
-                .x = ((v.x * 0.5) + 0.5) * @as(f32, @floatFromInt(width - 1)),
-                .y = ((-v.y * 0.5) + 0.5) * @as(f32, @floatFromInt(height - 1)), // <-- flip Y!
-            });
-        }
+    //     // Masks, defined in normalized space, need to be translated to pixel space for accurate mapping over the original image
+    //     for (mask) |v| {
+    //         try mask_vertices.append(rl.Vector2{
+    //             .x = ((v.x * 0.5) + 0.5) * @as(f32, @floatFromInt(width - 1)),
+    //             .y = ((-v.y * 0.5) + 0.5) * @as(f32, @floatFromInt(height - 1)), // <-- flip Y!
+    //         });
+    //     }
 
-        // Loop through every pixel
-        for (0..height) |y_px| {
-            for (0..width) |x_px| {
-                const p = rl.Vector2{
-                    .x = @floatFromInt(x_px),
-                    .y = @floatFromInt(y_px),
-                };
+    //     // Loop through every pixel
+    //     for (0..height) |y_px| {
+    //         for (0..width) |x_px| {
+    //             const p = rl.Vector2{
+    //                 .x = @floatFromInt(x_px),
+    //                 .y = @floatFromInt(y_px),
+    //             };
 
-                if (!engine.util.pointInPolygon(p, mask_vertices.items)) {
-                    const idx = y_px * width + x_px;
-                    pixels[idx] = rl.Color.black;
-                    pixels[idx].a = 0;
-                }
-            }
-        }
-    }
+    //             if (!engine.util.pointInPolygon(p, mask_vertices.items)) {
+    //                 const idx = y_px * width + x_px;
+    //                 pixels[idx] = rl.Color.black;
+    //                 pixels[idx].a = 0;
+    //             }
+    //         }
+    //     }
+    // }
 
     const texture = try rl.loadTextureFromImage(image);
     defer rl.unloadTexture(texture);
@@ -148,22 +185,16 @@ pub fn main() !void {
     const mesh_size =
         rl.Vector3.init(16.0, 8.0, 16.0);
 
-    const heightmap = try allocator.alloc(engine.terrain.Pixel, 256 * 256);
-    defer allocator.free(heightmap);
-
-    @memset(heightmap, engine.terrain.Pixel{
-        .r = 255,
-        .g = 255,
-        .b = 255,
-    });
-    // var mesh = try engine.terrain.genMaskedImageMesh(arena.allocator(), heightmap, mesh_size, mask, 2);
-    var mesh = try genMaskedImageMesh(arena.allocator(), image, mesh_size, null, 16);
+    var mesh = try engine.terrain.genMaskedImageMesh(arena.allocator(), image, mesh_size, mask, 2);
+    // var mesh = try genMaskedImageMesh(arena.allocator(), image, mesh_size, null, 16);
 
     rl.uploadMesh(&mesh, true);
     // defer rl.unloadMesh(mesh);
 
     var material = try rl.loadMaterialDefault();
-    material.maps[0].texture = texture;
+    material.maps[0].color = rl.Color.ray_white;
+    // material.maps[0].texture = texture;
+
     var position = rl.Matrix.identity();
     position.m12 = -8.0;
     position.m14 = -8.0;
