@@ -3,6 +3,20 @@ const core = @import("root");
 const rl = @import("raylib");
 const engine = @import("root.zig");
 
+/// The point at which a triangle fan is created in the outer perimeter
+/// rather than a strip being created from an offset
+const MINIMUM_ALLOWED_OUTER_PERIMETER_AREA: f32 = 0.02;
+/// The scale of the `outer_perimeter` that the `offset_perimeter` is
+/// should always be < 1
+const OFFSET_SCALE: f32 = 0.8;
+
+/// This should never change.
+/// Polygons are defined in normalized space, so the center is always:
+const POLYGON_CENTER = rl.Vector2{
+    .x = 0.0,
+    .y = 0.0,
+};
+
 fn sampleColor(uv: rl.Vector2, width: usize, height: usize, colors: []rl.Color) rl.Color {
     std.debug.assert(uv.x <= 1.0 and uv.x >= 0.0 and
         uv.y <= 1.0 and uv.y >= 0.0);
@@ -37,6 +51,30 @@ fn sampleColor(uv: rl.Vector2, width: usize, height: usize, colors: []rl.Color) 
     };
 
     return color;
+}
+
+fn estimateArea(vertices: []const rl.Vector2) f32 {
+    var sum: f32 = 0.0;
+    const n = vertices.len;
+    for (vertices, 0..) |p, i| {
+        const next = vertices[(i + 1) % n];
+        sum += (p.x * next.y) - (next.x * p.y);
+    }
+    return 0.5 * @abs(sum);
+}
+
+fn createOffsetPerimeter(
+    scale: f32,
+    center: rl.Vector2,
+    outer_perimeter: []rl.Vector2,
+    offset_perimeter: *[]rl.Vector2,
+) void {
+    for (outer_perimeter, offset_perimeter.*) |vertex, *v| {
+        v.* = rl.Vector2{
+            .x = center.x + (vertex.x - center.x) * scale,
+            .y = center.y + (vertex.y - center.y) * scale,
+        };
+    }
 }
 
 pub fn genMaskedImageMesh(
@@ -85,8 +123,7 @@ pub fn genMaskedImageMesh(
 
     const n = mask.len;
     var outer_perimeter = try allocator.alloc(rl.Vector2, n * resolution_scale);
-    // defer call should be removed later
-    defer allocator.free(outer_perimeter);
+    var offset_perimeter = try allocator.alloc(rl.Vector2, outer_perimeter.len);
 
     std.log.warn(
         \\ creating outer perimeter with {d} vertices
@@ -94,6 +131,7 @@ pub fn genMaskedImageMesh(
     , .{n * resolution_scale});
     var amt: usize = 0;
 
+    // populating the outer perimeter
     for (mask, 0..) |vertex, i| {
         const next_vertex =
             if (i + 1 == n)
@@ -108,22 +146,7 @@ pub fn genMaskedImageMesh(
         amt += 1;
     }
 
-    const polygon_center = rl.Vector2{
-        .x = 0.0,
-        .y = 0.0,
-    };
-
-    const offset_scale: f32 = 0.8;
-    const offset_perimeter = try allocator.alloc(rl.Vector2, outer_perimeter.len);
-    // defer call should be removed later
-    defer allocator.free(offset_perimeter);
-
-    for (outer_perimeter, offset_perimeter) |vertex, *v| {
-        v.* = rl.Vector2{
-            .x = polygon_center.x + (vertex.x - polygon_center.x) * offset_scale,
-            .y = polygon_center.y + (vertex.y - polygon_center.y) * offset_scale,
-        };
-    }
+    createOffsetPerimeter(OFFSET_SCALE, POLYGON_CENTER, outer_perimeter, &offset_perimeter);
 
     std.log.warn(
         \\
@@ -137,83 +160,145 @@ pub fn genMaskedImageMesh(
 
     std.debug.assert(outer_perimeter.len == offset_perimeter.len);
 
+    while (estimateArea(outer_perimeter) > MINIMUM_ALLOWED_OUTER_PERIMETER_AREA) {
+        var i: usize = 0;
+        while (i < outer_perimeter.len) {
+            const outer_uv0 = outer_perimeter[i];
+            const offset_uv0 = offset_perimeter[i];
+            const other_idx =
+                if (i + 1 >= outer_perimeter.len)
+                    0
+                else
+                    i + 1;
+            const outer_uv1 = outer_perimeter[other_idx];
+            const offset_uv1 = offset_perimeter[other_idx];
+
+            const outer_v0 = rl.Vector3{
+                .x = outer_uv0.x * size.x,
+                .y = (@as(f32, @floatFromInt(sampleColor(vec2ToUV(outer_uv0), map_width, map_height, colors).r)) / 255.0) * size.y,
+                .z = outer_uv0.y * size.z,
+            };
+            const offset_v0 = rl.Vector3{
+                .x = offset_uv0.x * size.x,
+                .y = (@as(f32, @floatFromInt(sampleColor(vec2ToUV(offset_uv0), map_width, map_height, colors).r)) / 255.0) * size.y,
+                .z = offset_uv0.y * size.z,
+            };
+
+            const outer_v1 = rl.Vector3{
+                .x = outer_uv1.x * size.x,
+                .y = (@as(f32, @floatFromInt(sampleColor(vec2ToUV(outer_uv1), map_width, map_height, colors).r)) / 255.0) * size.y,
+                .z = outer_uv1.y * size.z,
+            };
+            const offset_v1 = rl.Vector3{
+                .x = offset_uv1.x * size.x,
+                .y = (@as(f32, @floatFromInt(sampleColor(vec2ToUV(offset_uv1), map_width, map_height, colors).r)) / 255.0) * size.y,
+                .z = offset_uv1.y * size.z,
+            };
+
+            std.log.warn(
+                \\
+                \\ outer_v0:
+                \\ {any}
+                \\ offset_v0:
+                \\ {any}
+                \\ outer_v1:
+                \\ {any}
+                \\ offset_v1:
+                \\ {any}
+                \\
+            , .{
+                outer_v0,
+                offset_v0,
+                outer_v1,
+                offset_v1,
+            });
+
+            {
+                try vertices.append(outer_v0);
+                try normals.append(.{ .x = 0, .y = 1, .z = 0 }); // Up normals (basic)
+                try uvs.append(vec2ToUV(outer_uv0));
+                try vertices.append(offset_v0);
+                try normals.append(.{ .x = 0, .y = 1, .z = 0 }); // Up normals (basic)
+                try uvs.append(vec2ToUV(offset_uv0));
+                try vertices.append(outer_v1);
+                try normals.append(.{ .x = 0, .y = 1, .z = 0 }); // Up normals (basic)
+                try uvs.append(vec2ToUV(outer_uv1));
+            }
+
+            {
+                try vertices.append(offset_v0);
+                try normals.append(.{ .x = 0, .y = 1, .z = 0 }); // Up normals (basic)
+                try uvs.append(vec2ToUV(offset_uv0));
+                try vertices.append(offset_v1);
+                try normals.append(.{ .x = 0, .y = 1, .z = 0 }); // Up normals (basic)
+                try uvs.append(vec2ToUV(offset_uv1));
+                try vertices.append(outer_v1);
+                try normals.append(.{ .x = 0, .y = 1, .z = 0 }); // Up normals (basic)
+                try uvs.append(vec2ToUV(outer_uv1));
+            }
+
+            const base_idx = @as(u16, @intCast(vertices.items.len - 6));
+            for (0..6) |k| {
+                try indices.append(base_idx + @as(u16, @intCast(k)));
+            }
+
+            i += 1;
+        }
+
+        std.mem.copyForwards(rl.Vector2, outer_perimeter, offset_perimeter);
+        createOffsetPerimeter(OFFSET_SCALE, POLYGON_CENTER, outer_perimeter, &offset_perimeter);
+    }
+
+    // Now we close the mesh with a triangle fan
     var i: usize = 0;
+    const center = rl.Vector3{
+        .x = POLYGON_CENTER.x * size.x,
+        .y = (@as(f32, @floatFromInt(sampleColor(vec2ToUV(POLYGON_CENTER), map_width, map_height, colors).r)) / 255.0) * size.y,
+        .z = POLYGON_CENTER.y * size.z,
+    };
     while (i < outer_perimeter.len) {
-        const outer_uv0 = outer_perimeter[i];
-        const offset_uv0 = offset_perimeter[i];
         const other_idx =
             if (i + 1 >= outer_perimeter.len)
                 0
             else
                 i + 1;
-        const outer_uv1 = outer_perimeter[other_idx];
-        const offset_uv1 = offset_perimeter[other_idx];
+        const uv0 = outer_perimeter[i];
+        const uv1 = outer_perimeter[other_idx];
 
-        const outer_v0 = rl.Vector3{
-            .x = outer_uv0.x * size.x,
-            .y = (@as(f32, @floatFromInt(sampleColor(vec2ToUV(outer_uv0), map_width, map_height, colors).r)) / 255.0) * size.y,
-            .z = outer_uv0.y * size.z,
+        const v0 = rl.Vector3{
+            .x = uv0.x * size.x,
+            .y = (@as(f32, @floatFromInt(sampleColor(vec2ToUV(uv0), map_width, map_height, colors).r)) / 255.0) * size.y,
+            .z = uv0.y * size.z,
         };
-        const offset_v0 = rl.Vector3{
-            .x = offset_uv0.x * size.x,
-            .y = (@as(f32, @floatFromInt(sampleColor(vec2ToUV(offset_uv0), map_width, map_height, colors).r)) / 255.0) * size.y,
-            .z = offset_uv0.y * size.z,
-        };
-
-        const outer_v1 = rl.Vector3{
-            .x = outer_uv1.x * size.x,
-            .y = (@as(f32, @floatFromInt(sampleColor(vec2ToUV(outer_uv1), map_width, map_height, colors).r)) / 255.0) * size.y,
-            .z = outer_uv1.y * size.z,
-        };
-        const offset_v1 = rl.Vector3{
-            .x = offset_uv1.x * size.x,
-            .y = (@as(f32, @floatFromInt(sampleColor(vec2ToUV(offset_uv1), map_width, map_height, colors).r)) / 255.0) * size.y,
-            .z = offset_uv1.y * size.z,
+        const v1 = rl.Vector3{
+            .x = uv1.x * size.x,
+            .y = (@as(f32, @floatFromInt(sampleColor(vec2ToUV(uv1), map_width, map_height, colors).r)) / 255.0) * size.y,
+            .z = uv1.y * size.z,
         };
 
-        std.log.warn(
-            \\
-            \\ outer_v0:
-            \\ {any}
-            \\ offset_v0:
-            \\ {any}
-            \\ outer_v1:
-            \\ {any}
-            \\ offset_v1:
-            \\ {any}
-            \\
-        , .{
-            outer_v0,
-            offset_v0,
-            outer_v1,
-            offset_v1,
-        });
-
-        {
-            try vertices.append(outer_v0);
+        if (@mod(i, 2) != 0) {
+            try vertices.append(v0);
             try normals.append(.{ .x = 0, .y = 1, .z = 0 }); // Up normals (basic)
-            try uvs.append(vec2ToUV(outer_uv0));
-            try vertices.append(offset_v0);
+            try uvs.append(vec2ToUV(uv0));
+            try vertices.append(center);
             try normals.append(.{ .x = 0, .y = 1, .z = 0 }); // Up normals (basic)
-            try uvs.append(vec2ToUV(offset_uv0));
-            try vertices.append(outer_v1);
+            try uvs.append(vec2ToUV(POLYGON_CENTER));
+            try vertices.append(v1);
             try normals.append(.{ .x = 0, .y = 1, .z = 0 }); // Up normals (basic)
-            try uvs.append(vec2ToUV(outer_uv1));
+            try uvs.append(vec2ToUV(uv1));
+        } else {
+            try vertices.append(center);
+            try normals.append(.{ .x = 0, .y = 1, .z = 0 }); // Up normals (basic)
+            try uvs.append(vec2ToUV(POLYGON_CENTER));
+            try vertices.append(v1);
+            try normals.append(.{ .x = 0, .y = 1, .z = 0 }); // Up normals (basic)
+            try uvs.append(vec2ToUV(uv1));
+            try vertices.append(v0);
+            try normals.append(.{ .x = 0, .y = 1, .z = 0 }); // Up normals (basic)
+            try uvs.append(vec2ToUV(uv0));
         }
 
-        {
-            try vertices.append(offset_v0);
-            try normals.append(.{ .x = 0, .y = 1, .z = 0 }); // Up normals (basic)
-            try uvs.append(vec2ToUV(offset_uv0));
-            try vertices.append(offset_v1);
-            try normals.append(.{ .x = 0, .y = 1, .z = 0 }); // Up normals (basic)
-            try uvs.append(vec2ToUV(offset_uv1));
-            try vertices.append(outer_v1);
-            try normals.append(.{ .x = 0, .y = 1, .z = 0 }); // Up normals (basic)
-            try uvs.append(vec2ToUV(outer_uv1));
-        }
-
-        const base_idx = @as(u16, @intCast(vertices.items.len - 6));
+        const base_idx = @as(u16, @intCast(vertices.items.len - 3));
         for (0..6) |k| {
             try indices.append(base_idx + @as(u16, @intCast(k)));
         }
@@ -299,5 +384,6 @@ fn vec2ToUV(v: rl.Vector2) rl.Vector2 {
 //     // defer idcs.deinit();
 //     // try std.testing.expectError(error.Unimplemented, result);
 //     // @panic("");
+//
 //     return;
 // }

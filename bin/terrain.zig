@@ -192,8 +192,8 @@ pub fn main() !void {
     // defer rl.unloadMesh(mesh);
 
     var material = try rl.loadMaterialDefault();
-    material.maps[0].color = rl.Color.ray_white;
-    // material.maps[0].texture = texture;
+    // material.maps[0].color = rl.Color.ray_white;
+    material.maps[0].texture = texture;
 
     var position = rl.Matrix.identity();
     position.m12 = -8.0;
