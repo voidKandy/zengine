@@ -10,27 +10,58 @@ pub const BOX_MAX: f32 = 16.0;
 
 pub const World = struct {
     curve: Curve3D,
-    polygons: []Polygon,
     debug_mode: bool = true,
+    // polygons: []Polygon,
 
     /// PROTOTYPING!!!
-    heightmap: ?rl.Image = null,
-    meshes: ?[]rl.Mesh = null,
-
-    pub fn generate(allocator: std.mem.Allocator, rng: *std.Random.DefaultPrng) !@This() {
+    /// For now, we will just give every mesh a single heightmap.
+    /// Eventually each should be able to have their own
+    heightmap: rl.Image,
+    meshes: []engine.MeshBundle,
+    pub fn generate(allocator: std.mem.Allocator, rng: *std.Random.DefaultPrng, heightmap: rl.Image, mesh_size: rl.Vector3) !@This() {
         const amt_polies = rng.random().intRangeAtMost(usize, 3, 8);
         const curve = Curve3D.generate(rng);
+        const polygons = try randomNormPolies(allocator, amt_polies, rng, curve);
+        defer allocator.free(polygons);
+
+        const meshes = try allocator.alloc(engine.MeshBundle, amt_polies);
+
+        var material = try rl.loadMaterialDefault();
+        material.maps[0].color = rl.Color.ray_white;
+
+        for (polygons, meshes) |p, *m| {
+            const transform =
+                transform: {
+                    var mat = rl.Matrix.identity();
+                    mat.m12 = p.position.x;
+                    mat.m13 = p.position.y;
+                    mat.m14 = p.position.z;
+                    break :transform mat;
+                };
+            var bundle = engine.MeshBundle.init(allocator, transform);
+            const idx = try bundle.add_material(material);
+            const mesh =
+                try engine.terrain.genMaskedImageMesh(allocator, heightmap, mesh_size, p.vertices, 4);
+            try bundle.add_mesh(mesh, idx);
+            m.* = bundle;
+        }
+
         return @This(){
-            .polygons = try randomPolies(allocator, amt_polies, rng, curve),
             .curve = curve,
+            .heightmap = heightmap,
+            .meshes = meshes,
         };
     }
 
     /// Should be called with the same allocator used to `generate`
     pub fn deinit(self: @This(), allocator: std.mem.Allocator) void {
-        for (self.polygons) |p| {
-            p.deinit(allocator);
-        }
+        // _ = allocator;
+        allocator.free(self.meshes);
+        rl.unloadImage(self.heightmap);
+        // for (self.meshes) |*m| {
+        //     m.deinit();
+        //     rl.unloadMesh(m);
+        // }
     }
 
     /// Maybe this should just return a texture rather than using raylib to render
@@ -45,6 +76,10 @@ pub const World = struct {
         const scale_y: f32 = (size - 2.0 * padding) / range_y;
         const scale: f32 = @min(scale_x, scale_y);
 
+        _ = scale;
+        _ = self;
+        _ = allocator;
+
         {
             rl.beginTextureMode(tex);
             defer rl.endTextureMode();
@@ -54,37 +89,37 @@ pub const World = struct {
             rl.drawText("BOTTOM RIGHT", size - 90, size - 10, 10, rl.Color.white);
             rl.drawText("BOTTOM LEFT", 0, size - 10, 10, rl.Color.white);
 
-            for (self.polygons) |poly| {
-                const vert_count = poly.vertices.len;
-                std.debug.assert(vert_count >= 3);
-                const screen_vertices = try allocator.alloc(rl.Vector2, vert_count + 2); // +1 for center, +1 to close loop
-                defer allocator.free(screen_vertices);
+            // for (self.meshes) |mesh| {
+            //     const vert_count = poly.vertices.len;
+            //     std.debug.assert(vert_count >= 3);
+            //     const screen_vertices = try allocator.alloc(rl.Vector2, vert_count + 2); // +1 for center, +1 to close loop
+            //     defer allocator.free(screen_vertices);
 
-                // Center point of fan (convert to image space)
-                screen_vertices[0] = rl.Vector2{
-                    .x = (poly.position.x - BOX_MIN) * scale + padding,
-                    .y = size - ((poly.position.z - BOX_MIN) * scale + padding), // flip Y
-                };
+            //     // Center point of fan (convert to image space)
+            //     screen_vertices[0] = rl.Vector2{
+            //         .x = (poly.position.x - BOX_MIN) * scale + padding,
+            //         .y = size - ((poly.position.z - BOX_MIN) * scale + padding), // flip Y
+            //     };
 
-                // Add polygon points in order
-                for (poly.vertices, 0..) |v, i| {
-                    screen_vertices[i + 1] = rl.Vector2{
-                        .x = (v.x - BOX_MIN) * scale + padding,
-                        .y = size - ((v.z - BOX_MIN) * scale + padding),
-                    };
-                }
+            //     // Add polygon points in order
+            //     for (poly.vertices, 0..) |v, i| {
+            //         screen_vertices[i + 1] = rl.Vector2{
+            //             .x = (v.x - BOX_MIN) * scale + padding,
+            //             .y = size - ((v.z - BOX_MIN) * scale + padding),
+            //         };
+            //     }
 
-                // Close the fan loop (optional, Raylib may not need this depending on API version)
-                screen_vertices[vert_count + 1] = screen_vertices[1];
+            //     // Close the fan loop (optional, Raylib may not need this depending on API version)
+            //     screen_vertices[vert_count + 1] = screen_vertices[1];
 
-                rl.drawTriangleFan(screen_vertices, rl.Color.red);
+            //     rl.drawTriangleFan(screen_vertices, rl.Color.red);
 
-                // Optional: draw dots for debugging
-                // for (screen_vertices) |pt| {
-                //     rl.drawCircleV(pt, 2.0, rl.Color.green);
-                // }
+            //     // Optional: draw dots for debugging
+            //     // for (screen_vertices) |pt| {
+            //     //     rl.drawCircleV(pt, 2.0, rl.Color.green);
+            //     // }
 
-            }
+            // }
         }
 
         rl.drawTextureRec(
@@ -120,174 +155,132 @@ fn interpolate(p0: Vector3, p1: Vector3, p2: Vector3, t: f32) Vector3 {
     };
 }
 
-pub const Polygon = struct {
+/// Precursor to terrain mesh
+pub const TerrainPolygon = struct {
+    /// This is the position the mesh should be in
     position: Vector3,
-    vertices: []Vector3,
-
-    pub fn draw(self: @This()) void {
-        var i: usize = 0;
-        while (i < self.vertices.len) : (i += 1) {
-            const next_i = (i + 1) % self.vertices.len;
-
-            const v1 = self.vertices[i];
-            const v2 = self.vertices[next_i];
-
-            rl.drawLine3D(v2, v1, rl.Color.orange);
-            rl.drawTriangle3D(self.position, v2, v1, rl.Color.green);
-        }
-    }
+    /// This defines the polygon mask where the mesh is generated
+    /// MUST be defined in normalized space
+    /// (-1 : 1)
+    vertices: []rl.Vector2,
 
     /// should be called with the same allocator used to `generateVertices`
     pub fn deinit(self: @This(), allocator: std.mem.Allocator) void {
         allocator.free(self.vertices);
     }
-
-    pub fn intoMesh(self: @This(), allocator: std.mem.Allocator) !rl.Mesh {
-        // For a mesh, all verts are compressed to a single array
-        var vertices = try allocator.alloc(f32, self.vertices.len * 3);
-        const texcoords = try allocator.alloc(f32, vertices.len);
-        const normals = try allocator.alloc(f32, vertices.len);
-
-        for (self.vertices, 0..) |v, i| {
-            for (0..3) |k| {
-                const val = switch (k) {
-                    0 => v.x,
-                    1 => v.y,
-                    2 => v.z,
-                    else => @panic("UNREACHABLE"),
-                };
-                vertices[(i * 3) + k] = val;
-            }
-        }
-        // @memcpy(self.vertices, vertices);
-
-        const newmesh = rl.Mesh{
-            .vertexCount = 6,
-            .triangleCount = 2,
-            .vertices = vertices.ptr,
-            .texcoords = texcoords.ptr,
-            .normals = normals.ptr,
-            .texcoords2 = null,
-            .tangents = null,
-            .colors = null,
-            .indices = null,
-            .animVertices = null,
-            .animNormals = null,
-            .boneIds = null,
-            .boneWeights = null,
-            .boneMatrices = null,
-            .boneCount = 0,
-            .vaoId = 0,
-            .vboId = null,
-        };
-
-        return newmesh;
-    }
-
-    /// Used to generate vertices when random polygons are generated
-    fn generateVertices(
-        alloc: std.mem.Allocator,
-        n: usize,
-        position: rl.Vector3,
-        rng: *std.Random.DefaultPrng,
-        avg_radius: f32,
-        irregularity: f32,
-        spikiness: f32,
-    ) std.mem.Allocator.Error![]rl.Vector3 {
-        if (irregularity < 0 or irregularity > 1)
-            @panic("Irregularity must be between 0 and 1.");
-        if (spikiness < 0 or spikiness > 1)
-            @panic("Spikiness must be between 0 and 1.");
-        var irr = irregularity;
-        var spik = spikiness;
-        var vertices = try alloc.alloc(rl.Vector3, n);
-
-        irr *= 2 * std.math.pi / @as(f32, @floatFromInt(n));
-        spik *= avg_radius;
-
-        const angle_steps = try randomAngleSteps(alloc, n, rng, irr);
-        defer alloc.free(angle_steps);
-
-        var angle = rng.random().float(f32) * (2 * std.math.pi);
-
-        // last used is 0 if it was just created
-        // 1 if the last one used was `@"0"`
-        // 2 if the last one used was `0"1"`
-        var last_gauss: struct { vals: struct { f32, f32 }, last_used: u2 } = undefined;
-        for (0..n) |i| {
-            const v = &vertices[i];
-            const step = angle_steps[i];
-
-            const sample = blk: {
-                while (true) {
-                    switch (last_gauss.last_used) {
-                        0 => {
-                            last_gauss.last_used += 1;
-                            break :blk last_gauss.vals.@"0";
-                        },
-                        1 => {
-                            last_gauss.last_used += 1;
-                            break :blk last_gauss.vals.@"1";
-                        },
-                        else => {
-                            last_gauss.vals = engine.noise.generateGaussianNoise(rng, avg_radius, spik);
-                            last_gauss.last_used = 0;
-                        },
-                    }
-                }
-            };
-
-            const radius: f32 = @min(@max(sample, 0.0), 1.2 * avg_radius);
-
-            const point = rl.Vector3.init(position.x + radius * @cos(angle), position.y, position.z + radius * @sin(angle));
-            v.* = point;
-            angle += step;
-        }
-        return vertices;
-    }
-
-    fn randomAngleSteps(alloc: std.mem.Allocator, n: usize, rng: *std.Random.DefaultPrng, irregularity: f32) std.mem.Allocator.Error![]f32 {
-        var steps = try alloc.alloc(f32, n);
-        const lower = (2.0 * std.math.pi / @as(f32, @floatFromInt(steps.len))) - irregularity;
-        const upper = (2.0 * std.math.pi / @as(f32, @floatFromInt(steps.len))) + irregularity;
-        var cumsum: f32 = 0.0;
-
-        for (0..n) |i| {
-            const step = &steps[i];
-            const angle = blk: {
-                var f = rng.random().float(f32) * upper;
-                while (f < lower) {
-                    f = rng.random().float(f32) * upper;
-                }
-                break :blk f;
-            };
-
-            step.* = angle;
-            cumsum += angle;
-        }
-
-        cumsum /= (2 * std.math.pi);
-        for (0..n) |i| {
-            steps[i] /= cumsum;
-        }
-        return steps;
-    }
 };
 
-const ALLOWED_FAILURES = 500;
-fn randomPolies(alloc: std.mem.Allocator, n: usize, rng: *std.Random.DefaultPrng, curve: Curve3D) std.mem.Allocator.Error![]Polygon {
-    var result = try alloc.alloc(Polygon, n);
+fn randomAngleSteps(alloc: std.mem.Allocator, n: usize, rng: *std.Random.DefaultPrng, irregularity: f32) std.mem.Allocator.Error![]f32 {
+    var steps = try alloc.alloc(f32, n);
+    const lower = (2.0 * std.math.pi / @as(f32, @floatFromInt(steps.len))) - irregularity;
+    const upper = (2.0 * std.math.pi / @as(f32, @floatFromInt(steps.len))) + irregularity;
+    var cumsum: f32 = 0.0;
 
     for (0..n) |i| {
-        const t = @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(n - 1));
+        const step = &steps[i];
+        const angle = blk: {
+            var f = rng.random().float(f32) * upper;
+            while (f < lower) {
+                f = rng.random().float(f32) * upper;
+            }
+            break :blk f;
+        };
+
+        step.* = angle;
+        cumsum += angle;
+    }
+
+    cumsum /= (2 * std.math.pi);
+    for (0..n) |i| {
+        steps[i] /= cumsum;
+    }
+    return steps;
+}
+
+fn generateNormalizedVertices(
+    alloc: std.mem.Allocator,
+    rng: *std.Random.DefaultPrng,
+    options: struct {
+        n_verts: usize,
+        /// MUST be between 0 and 1
+        irregularity: f32,
+        /// MUST be between 0 and 1
+        spikiness: f32,
+    },
+) std.mem.Allocator.Error![]rl.Vector2 {
+    if (options.irregularity < 0 or options.irregularity > 1)
+        @panic("options.Irregularity must be between 0 and 1.");
+    if (options.spikiness < 0 or options.spikiness > 1)
+        @panic("options.Spikiness must be between 0 and 1.");
+
+    var irr = options.irregularity;
+    var vertices = try alloc.alloc(rl.Vector2, options.n_verts);
+
+    irr *= 2 * std.math.pi / @as(f32, @floatFromInt(options.n_verts));
+
+    const angle_steps = try randomAngleSteps(alloc, options.n_verts, rng, irr);
+    defer alloc.free(angle_steps);
+
+    var angle = rng.random().float(f32) * (2 * std.math.pi);
+
+    // last used is 0 if it was just created
+    // 1 if the last one used was `@"0"`
+    // 2 if the last one used was `0"1"`
+    // If 2, we sample again & set `last_used` to 0
+    // Doing this as a naive way of keeping track of which value we sampled last because we are
+    // sampling the noise two values at a time
+    // ... I'm sure there's a better way
+    var last_gauss: struct { vals: struct { f32, f32 }, last_used: u2 } = undefined;
+    for (0..options.n_verts) |i| {
+        const v = &vertices[i];
+        const step = angle_steps[i];
+
+        const sample = blk: {
+            while (true) {
+                switch (last_gauss.last_used) {
+                    0 => {
+                        last_gauss.last_used += 1;
+                        break :blk last_gauss.vals.@"0";
+                    },
+                    1 => {
+                        last_gauss.last_used += 1;
+                        break :blk last_gauss.vals.@"1";
+                    },
+                    else => {
+                        last_gauss.vals = engine.noise.sampleNormalPair(rng, 1.0, options.spikiness);
+                        last_gauss.last_used = 0;
+                    },
+                }
+            }
+        };
+
+        // Radius is clamped to 1.0 to ensure normalized values
+        const radius: f32 = @min(@max(sample, 0.0), 1.0);
+
+        const point = rl.Vector2.init(radius * @cos(angle), radius * @sin(angle));
+        v.* = point;
+        angle += step;
+    }
+    return vertices;
+}
+
+const ALLOWED_FAILURES = 500;
+/// Generates random polygons along curve
+/// Vertices defined in normalized space
+fn randomNormPolies(alloc: std.mem.Allocator, amt: usize, rng: *std.Random.DefaultPrng, curve: Curve3D) std.mem.Allocator.Error![]TerrainPolygon {
+    var result = try alloc.alloc(TerrainPolygon, amt);
+
+    for (0..amt) |i| {
+        const t = @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(amt - 1));
         const pos = interpolate(curve.start, curve.control, curve.end, t);
         var amt_verts: usize = undefined;
-        var verts: []rl.Vector3 = undefined;
+        var verts: []rl.Vector2 = undefined;
         var gen_failures: usize = 0;
 
         gen_verts: while (true) {
             amt_verts = rng.random().intRangeAtMost(usize, 3, 12);
-            verts = try Polygon.generateVertices(alloc, amt_verts, pos, rng, 1, 0.5, 0.2);
+            // verts = try Polygon.generateVertices(alloc, amt_verts, pos, rng, 1, 0.5, 0.2);
+            verts = try generateNormalizedVertices(alloc, rng, .{ .n_verts = amt_verts, .irregularity = 0.5, .spikiness = 0.2 });
 
             if (i == 0) break :gen_verts;
 
@@ -299,8 +292,8 @@ fn randomPolies(alloc: std.mem.Allocator, n: usize, rng: *std.Random.DefaultPrng
                 const a = verts[k];
                 const b = verts[(k + 1) % verts.len];
                 const segment = LineSegment{
-                    .start = rl.Vector2.init(a.x, a.z),
-                    .end = rl.Vector2.init(b.x, b.z),
+                    .start = rl.Vector2.init(a.x, a.y),
+                    .end = rl.Vector2.init(b.x, b.y),
                 };
 
                 var j: usize = 0;
@@ -308,8 +301,8 @@ fn randomPolies(alloc: std.mem.Allocator, n: usize, rng: *std.Random.DefaultPrng
                     const c = prev_poly.vertices[j];
                     const d = prev_poly.vertices[(j + 1) % prev_poly.vertices.len];
                     const other_segment = LineSegment{
-                        .start = rl.Vector2.init(c.x, c.z),
-                        .end = rl.Vector2.init(d.x, d.z),
+                        .start = rl.Vector2.init(c.x, c.y),
+                        .end = rl.Vector2.init(d.x, d.y),
                     };
 
                     intersects = segment.intersects(other_segment);
@@ -333,7 +326,7 @@ fn randomPolies(alloc: std.mem.Allocator, n: usize, rng: *std.Random.DefaultPrng
             \\
         , .{});
 
-        result[i] = Polygon{
+        result[i] = TerrainPolygon{
             .position = pos,
             .vertices = verts,
         };
@@ -341,7 +334,6 @@ fn randomPolies(alloc: std.mem.Allocator, n: usize, rng: *std.Random.DefaultPrng
 
     return result;
 }
-
 const Curve3D = struct {
     start: Vector3,
     control: Vector3,
@@ -372,97 +364,3 @@ const Curve3D = struct {
         rl.drawSphere(self.end, 0.1, rl.Color.green);
     }
 };
-
-test "polygon to mesh" {
-    const allocator = std.testing.allocator;
-
-    var rng = std.Random.DefaultPrng.init(blk: {
-        var seed: u64 = undefined;
-        try std.posix.getrandom(std.mem.asBytes(&seed));
-        break :blk seed;
-    });
-
-    const curve = Curve3D.generate(&rng);
-    // _ = allocator;
-    // _ = curve;
-
-    var polies = try randomPolies(allocator, 5, &rng, curve);
-    defer {
-        for (polies) |p| {
-            p.deinit(allocator);
-        }
-    }
-    const mesh = try polies[0].intoMesh(allocator);
-    defer {
-        allocator.free(std.mem.span(mesh.vertices));
-        allocator.free(std.mem.span(mesh.texcoords));
-        allocator.free(std.mem.span(mesh.normals));
-    }
-}
-
-fn randomMeshesAlongCurve(alloc: std.mem.Allocator, n: usize, rng: *std.Random.DefaultPrng, curve: Curve3D) std.mem.Allocator.Error![]rl.Mesh {
-    var all_meshes = try alloc.alloc(rl.Mesh, n);
-
-    for (0..n) |i| {
-        const t = @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(n - 1));
-        const pos = interpolate(curve.start, curve.control, curve.end, t);
-        var amt_verts: usize = undefined;
-        var verts: []rl.Vector3 = undefined;
-        var gen_failures: usize = 0;
-
-        gen_verts: while (true) {
-            amt_verts = rng.random().intRangeAtMost(usize, 3, 12);
-            verts = try Polygon.generateVertices(alloc, amt_verts, pos, rng, 1, 0.5, 0.2);
-
-            if (i == 0) break :gen_verts;
-
-            const prev_poly = all_meshes[i - 1];
-            var intersects = false;
-
-            var k: usize = 0;
-            while (k < verts.len and !intersects) : (k += 1) {
-                const a = verts[k];
-                const b = verts[(k + 1) % verts.len];
-                const segment = LineSegment{
-                    .start = rl.Vector2.init(a.x, a.z),
-                    .end = rl.Vector2.init(b.x, b.z),
-                };
-
-                var j: usize = 0;
-                while (j < prev_poly.vertices.len and !intersects) : (j += 1) {
-                    const c = prev_poly.vertices[j];
-                    const d = prev_poly.vertices[(j + 1) % prev_poly.vertices.len];
-                    const other_segment = LineSegment{
-                        .start = rl.Vector2.init(c.x, c.z),
-                        .end = rl.Vector2.init(d.x, d.z),
-                    };
-
-                    intersects = segment.intersects(other_segment);
-                }
-            }
-
-            if (!intersects or gen_failures >= ALLOWED_FAILURES) break :gen_verts;
-            gen_failures += 1;
-            alloc.free(verts);
-
-            std.log.warn(
-                \\ intersects, regenerating Polygon 
-                \\
-            , .{});
-        }
-
-        if (gen_failures >= ALLOWED_FAILURES)
-            std.log.warn("Failed too many times\n", .{});
-        std.log.warn(
-            \\ Polygon generated
-            \\
-        , .{});
-
-        all_meshes[i] = Polygon{
-            .position = pos,
-            .vertices = verts,
-        };
-    }
-
-    return all_meshes;
-}

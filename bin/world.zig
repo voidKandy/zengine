@@ -21,7 +21,13 @@ fn initState(allocator: std.mem.Allocator, ecs: *game.Ecs, rng: *std.Random.Defa
     physics_world.debugSetDrawer(&physics_debug.getDebugDraw());
     physics_world.debugSetMode(.{ .draw_wireframe = true, .draw_aabb = true });
 
-    const world = try game.world.World.generate(allocator, rng);
+    const image = try rl.loadImage("resources/heightmap.png");
+    // defer rl.unloadImage(image);
+    const world = try game.world.World.generate(allocator, rng, image, rl.Vector3{
+        .x = 16.0,
+        .y = 16.0,
+        .z = 16.0,
+    });
 
     const static_cam_system = game.Ecs.System{
         .schedule = .explicit,
@@ -80,14 +86,14 @@ fn initState(allocator: std.mem.Allocator, ecs: *game.Ecs, rng: *std.Random.Defa
     // Each polygon gets a camera looking at the position of that poly
     const cam_y_offset = 1.0;
     const cam_x_offset = 5.0;
-    for (world.polygons) |p| {
-        const position = rl.Vector3.init(p.position.x + cam_x_offset, p.position.y + cam_y_offset, p.position.z);
-        const target = p.position;
+    for (world.meshes) |m| {
+        const mesh_position = engine.util.extractPosition(m.transform);
+        const position = rl.Vector3.init(mesh_position.x + cam_x_offset, mesh_position.y + cam_y_offset, mesh_position.z);
         const up = rl.Vector3.init(0.0, 1.0, 0.0);
 
         const camera = rl.Camera3D{
             .position = position,
-            .target = target,
+            .target = mesh_position,
             .up = up,
             .fovy = 45.0,
             .projection = rl.CameraProjection.perspective,

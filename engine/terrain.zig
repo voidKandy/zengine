@@ -8,7 +8,7 @@ const engine = @import("root.zig");
 const MINIMUM_ALLOWED_OUTER_PERIMETER_AREA: f32 = 0.02;
 /// The scale of the `outer_perimeter` that the `offset_perimeter` is
 /// should always be < 1
-const OFFSET_SCALE: f32 = 0.8;
+const OFFSET_SCALE: f32 = 0.9;
 
 /// This should never change.
 /// Polygons are defined in normalized space, so the center is always:
@@ -18,8 +18,15 @@ const POLYGON_CENTER = rl.Vector2{
 };
 
 fn sampleColor(uv: rl.Vector2, width: usize, height: usize, colors: []rl.Color) rl.Color {
-    std.debug.assert(uv.x <= 1.0 and uv.x >= 0.0 and
-        uv.y <= 1.0 and uv.y >= 0.0);
+    if (uv.x > 1.0 or uv.x < 0.0 or
+        uv.y > 1.0 or uv.y < 0.0)
+    {
+        std.log.err(
+            \\ INVALID UV:
+            \\ {any}
+        , .{uv});
+        @panic("INVALID UV");
+    }
     const x_f = uv.x * @as(f32, @floatFromInt(width - 1));
     const z_f = uv.y * @as(f32, @floatFromInt(height - 1));
 
@@ -77,6 +84,7 @@ fn createOffsetPerimeter(
     }
 }
 
+/// Calls `rl.uploadMesh`
 pub fn genMaskedImageMesh(
     allocator: std.mem.Allocator,
     /// Row Major Heightmap
@@ -84,7 +92,6 @@ pub fn genMaskedImageMesh(
     size: rl.Vector3,
     /// The polygon the describes the mask over the heightmap image.
     /// SHOULD NOT INCLUDE THE CENTER
-    /// BAD TYPE
     mask: []const rl.Vector2,
     /// This defines how many more points we need to add to the perimeter.
     /// MUST BE AN EVEN NUMBER
@@ -333,6 +340,8 @@ pub fn genMaskedImageMesh(
     mesh.*.vertexCount = @as(c_int, @intCast(vertices.items.len));
     mesh.*.triangleCount = @as(c_int, @intCast(indices.items.len / 3));
 
+    rl.uploadMesh(mesh, false);
+
     return mesh.*;
 }
 
@@ -347,43 +356,17 @@ fn midpoint(v1: rl.Vector2, v2: rl.Vector2) rl.Vector2 {
 /// Which ranges from 0 to 1.0
 /// The Y also needs to be flipped because UV space has Y INCREASE as we go DOWN the grid
 fn vec2ToUV(v: rl.Vector2) rl.Vector2 {
-    return rl.Vector2{
-        .x = (v.x + 0.5),
-        .y = 1.0 - (v.y + 0.5),
+    const result = rl.Vector2{
+        .x = (v.x + 1.0) * 0.5,
+        .y = 1.0 - ((v.y + 1.0) * 0.5),
     };
+
+    std.log.warn(
+        \\ Converting Vec:
+        \\ {any}
+        \\ To UV:
+        \\ {any}
+    , .{ v, result });
+
+    return result;
 }
-
-// test "terrain!" {
-//     const allocator = std.testing.allocator;
-
-//     const heightmap = try allocator.alloc(Pixel, 256 * 256);
-//     defer allocator.free(heightmap);
-
-//     @memset(heightmap, Pixel{
-//         .r = 255,
-//         .g = 255,
-//         .b = 255,
-//     });
-
-//     const mask = [_]rl.Vector2{
-//         .{ .x = 0.5, .y = 0.5 },
-//         .{ .x = -0.5, .y = 0.5 },
-//         // .{ .x = -0.7, .y = 0.0 },
-//         .{ .x = -0.5, .y = -0.5 },
-//         .{ .x = 0.5, .y = -0.5 },
-//     };
-
-//     // const image = try rl.loadImage("resources/heightmap.png");
-//     // defer rl.unloadImage(image);
-//     //
-//     const size = rl.Vector3.init(16.0, 4.0, 16.0);
-
-//     const mesh =
-//         try genMaskedImageMesh(allocator, heightmap, size, &mask, 2);
-//     _ = mesh;
-//     // defer idcs.deinit();
-//     // try std.testing.expectError(error.Unimplemented, result);
-//     // @panic("");
-//
-//     return;
-// }

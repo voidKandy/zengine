@@ -4,14 +4,15 @@ const zbt = @import("zbullet");
 const Self = @This();
 
 transform: rl.Matrix,
-materials: []const rl.Material,
+materials: std.ArrayList(rl.Material),
 meshes: std.ArrayList(rl.Mesh),
 /// Maps *index of mesh* to *index of material*
 mesh_material_map: std.AutoHashMap(usize, usize),
 
-pub fn init(allocator: std.mem.Allocator, materials: []const rl.Material, transform: rl.Matrix) Self {
+pub fn init(allocator: std.mem.Allocator, transform: rl.Matrix) Self {
     const map = std.AutoHashMap(usize, usize).init(allocator);
     const meshes = std.ArrayList(rl.Mesh).init(allocator);
+    const materials = std.ArrayList(rl.Material).init(allocator);
     return Self{
         .transform = transform,
         .meshes = meshes,
@@ -23,10 +24,17 @@ pub fn init(allocator: std.mem.Allocator, materials: []const rl.Material, transf
 pub fn deinit(self: *Self) void {
     self.mesh_material_map.deinit();
     self.meshes.deinit();
+    self.materials.deinit();
 }
 
-pub fn add(self: *Self, mesh: rl.Mesh, material_idx: usize) !void {
-    if (self.materials.len < material_idx) {
+/// returns the index of the material
+pub fn add_material(self: *Self, material: rl.Material) !usize {
+    try self.materials.append(material);
+    return self.materials.items.len - 1;
+}
+
+pub fn add_mesh(self: *Self, mesh: rl.Mesh, material_idx: usize) !void {
+    if (self.materials.items.len < material_idx) {
         return error.InvalidMaterialIndex;
     }
 
@@ -37,18 +45,16 @@ pub fn add(self: *Self, mesh: rl.Mesh, material_idx: usize) !void {
 }
 
 pub fn draw(self: Self) void {
+    std.log.warn(
+        \\ DRAWING MESH BUNDLE
+        \\
+    , .{});
     // In order to ensure meshes are drawn in the order they were inserted
     // we iterate through their indices
     for (0..self.meshes.items.len) |mesh_idx| {
         const mat_idx = self.mesh_material_map.get(mesh_idx) orelse @panic("MESH DOESN'T HAVE MATERIAL??");
-        // std.log.warn(
-        //     \\ Rendering Mesh {}
-        //     \\ With Material {}
-        //     \\
-        // , .{ mesh_idx, mat_idx });
-
         const mesh = self.meshes.items[mesh_idx];
-        const mat = self.materials[mat_idx];
+        const mat = self.materials.items[mat_idx];
 
         if (@intFromPtr(&mesh) == 0 or @intFromPtr(&mat) == 0) {
             std.log.err(

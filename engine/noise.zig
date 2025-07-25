@@ -1,8 +1,9 @@
 const std = @import("std");
 /// `mu` - *mean* of the distribution
 /// `sigma` - *standard deviation* of the distribution
-/// https://en.wikipedia.org/wiki/Box%E2%80%93Muller_transform
-pub fn generateGaussianNoise(rng: *std.Random.DefaultPrng, mu: f32, sigma: f32) struct { f32, f32 } {
+/// [Uses Box Muller Transform](https://en.wikipedia.org/wiki/Box%E2%80%93Muller_transform)
+/// Returns *two* values
+pub fn sampleNormalPair(rng: *std.Random.DefaultPrng, mu: f32, sigma: f32) struct { f32, f32 } {
     const two_pi: f32 = std.math.pi * 2.0;
     const val1 = blk: {
         var n = rng.random().float(f32);

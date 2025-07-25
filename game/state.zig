@@ -114,9 +114,13 @@ pub const GameState = struct {
             );
 
             world.curve.draw();
-            for (world.polygons) |p| {
-                p.draw();
+            for (world.meshes) |mesh| {
+                mesh.draw();
+                // mesh.@"1".draw(material: Material, )
             }
+            // for (world.polygons) |p| {
+            //     p.draw();
+            // }
             if (world.debug_mode)
                 rl.drawCubeWires(box_center, box_size.x, box_size.y, box_size.z, rl.Color.light_gray);
         }
