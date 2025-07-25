@@ -9,6 +9,7 @@ pub const BOX_MIN: f32 = -16.0;
 pub const BOX_MAX: f32 = 16.0;
 
 pub const World = struct {
+    size: f32,
     curve: Curve3D,
     debug_mode: bool = true,
     // polygons: []Polygon,
@@ -18,16 +19,22 @@ pub const World = struct {
     /// Eventually each should be able to have their own
     heightmap: rl.Image,
     meshes: []engine.MeshBundle,
-    pub fn generate(allocator: std.mem.Allocator, rng: *std.Random.DefaultPrng, heightmap: rl.Image, mesh_size: rl.Vector3) !@This() {
+    pub fn generate(allocator: std.mem.Allocator, rng: *std.Random.DefaultPrng, heightmap: rl.Image, world_size: f32) !@This() {
         const amt_polies = rng.random().intRangeAtMost(usize, 3, 8);
         const curve = Curve3D.generate(rng);
         const polygons = try randomNormPolies(allocator, amt_polies, rng, curve);
         defer allocator.free(polygons);
 
         const meshes = try allocator.alloc(engine.MeshBundle, amt_polies);
+        const mesh_size = rl.Vector3.init(
+            world_size / 100.0,
+            world_size / 100.0,
+            world_size / 100.0,
+        );
 
         var material = try rl.loadMaterialDefault();
-        material.maps[0].color = rl.Color.ray_white;
+        material.maps[0].texture = try heightmap.toTexture();
+        // material.maps[0].color = rl.Color.ray_white;
 
         for (polygons, meshes) |p, *m| {
             const transform =
@@ -50,6 +57,7 @@ pub const World = struct {
             .curve = curve,
             .heightmap = heightmap,
             .meshes = meshes,
+            .size = world_size,
         };
     }
 

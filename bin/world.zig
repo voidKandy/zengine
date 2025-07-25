@@ -23,11 +23,8 @@ fn initState(allocator: std.mem.Allocator, ecs: *game.Ecs, rng: *std.Random.Defa
 
     const image = try rl.loadImage("resources/heightmap.png");
     // defer rl.unloadImage(image);
-    const world = try game.world.World.generate(allocator, rng, image, rl.Vector3{
-        .x = 16.0,
-        .y = 16.0,
-        .z = 16.0,
-    });
+    //
+    const world = try game.world.World.generate(allocator, rng, image, 256.0);
 
     const static_cam_system = game.Ecs.System{
         .schedule = .explicit,
@@ -83,9 +80,9 @@ fn initState(allocator: std.mem.Allocator, ecs: *game.Ecs, rng: *std.Random.Defa
         try cameras.append(game.state.CameraReference{ .camera_id = handle.identifier, .system_id = static_sys_id });
     }
 
-    // Each polygon gets a camera looking at the position of that poly
+    // Each mesh gets a camera looking at the position of that poly
     const cam_y_offset = 1.0;
-    const cam_x_offset = 5.0;
+    const cam_x_offset = 50.0;
     for (world.meshes) |m| {
         const mesh_position = engine.util.extractPosition(m.transform);
         const position = rl.Vector3.init(mesh_position.x + cam_x_offset, mesh_position.y + cam_y_offset, mesh_position.z);
