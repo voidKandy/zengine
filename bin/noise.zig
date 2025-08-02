@@ -7,9 +7,9 @@ const rl = @import("raylib");
 const WINDOW_WIDTH = 800;
 const WINDOW_HEIGHT = 600;
 
-fn createNoiseImage(allocator: std.mem.Allocator, rng: *std.Random.DefaultPrng, size: i32) !rl.Image {
+fn createNoiseImage(seed: u32, size: i32) !rl.Image {
     var img = rl.Image.genColor(size, size, rl.Color.black);
-    engine.noise.genPerlinNoise(allocator, rng, &img);
+    engine.noise.genPerlinNoise(&img, seed);
 
     return img;
 }
@@ -35,11 +35,16 @@ pub fn main() !void {
     });
 
     const size: i32 = 512;
-    const img = try createNoiseImage(arena.allocator(), &rng, size);
-    const tx =
-        try img.toTexture();
+    var seed = rng.random().int(u32);
+    var img = try createNoiseImage(seed, size);
     const render_tex = try rl.RenderTexture2D.init(size, size);
+
     while (!rl.windowShouldClose()) {
+        if (rl.isKeyPressed(rl.KeyboardKey.r)) {
+            seed = rng.random().int(u32);
+            img = try createNoiseImage(seed, size);
+        }
+
         rl.beginDrawing();
         defer rl.endDrawing();
 
@@ -50,7 +55,7 @@ pub fn main() !void {
             rl.beginTextureMode(render_tex);
             defer rl.endTextureMode();
             rl.drawTextureRec(
-                tx,
+                try img.toTexture(),
                 rl.Rectangle{
                     .x = 0.0,
                     .y = 0.0,
