@@ -342,6 +342,7 @@ fn randomNormPolies(alloc: std.mem.Allocator, amt: usize, rng: *std.Random.Defau
 
     return result;
 }
+
 const Curve3D = struct {
     start: Vector3,
     control: Vector3,
@@ -366,7 +367,6 @@ const Curve3D = struct {
             prev = p;
         }
 
-        // Optional: draw the control points
         rl.drawSphere(self.start, 0.1, rl.Color.blue);
         rl.drawSphere(self.control, 0.1, rl.Color.yellow);
         rl.drawSphere(self.end, 0.1, rl.Color.green);

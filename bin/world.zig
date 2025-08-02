@@ -25,6 +25,12 @@ fn initState(allocator: std.mem.Allocator, ecs: *game.Ecs, rng: *std.Random.Defa
     // defer rl.unloadImage(image);
     //
     const world = try game.world.World.generate(allocator, rng, image, 256.0);
+    for (world.meshes) |bundle| {
+        for (bundle.meshes.items) |mesh| {
+            const shape = engine.util.meshToBulletShape(mesh);
+            _ = shape;
+        }
+    }
 
     const static_cam_system = game.Ecs.System{
         .schedule = .explicit,

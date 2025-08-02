@@ -48,6 +48,15 @@ pub const RotateTerrain = game.Ecs.System{
 };
 
 fn initState(allocator: std.mem.Allocator, ecs: *game.Ecs) !game.state.GameState {
+    var physics_world = zbt.initWorld();
+
+    const default_gravity: f32 = 10.0;
+    physics_world.setGravity(&.{ 0.0, -default_gravity, 0.0 });
+    var physics_debug = try allocator.create(zbt.DebugDrawer);
+    physics_debug.* = zbt.DebugDrawer.init(allocator);
+    physics_world.debugSetDrawer(&physics_debug.getDebugDraw());
+    physics_world.debugSetMode(.{ .draw_wireframe = true, .draw_aabb = true });
+
     const camera = rl.Camera{
         .position = rl.Vector3.init(18.0, 21.0, 18.0),
         .target = rl.Vector3.init(0.0, 0.0, 0.0),
@@ -71,6 +80,10 @@ fn initState(allocator: std.mem.Allocator, ecs: *game.Ecs) !game.state.GameState
         .window_width = WINDOW_WIDTH,
         .current_camera = 0,
         .cameras = cameras,
+        .physics = .{
+            .world = physics_world,
+            .debug = physics_debug,
+        },
     };
     return state;
 }
@@ -87,6 +100,8 @@ pub fn main() !void {
 
     var ecs = game.Ecs.init(&arena);
     defer ecs.deinit();
+    zbt.init(arena.allocator());
+    defer zbt.deinit();
     var state = try initState(arena.allocator(), &ecs);
     defer state.deinit();
     _ = try ecs.systems.register(RotateTerrain);
@@ -200,9 +215,9 @@ pub fn main() !void {
     position.m14 = -8.0;
 
     var bundle =
-        engine.MeshBundle.init(ecs.allocator, &[_]rl.Material{material}, position);
-    try bundle.add(mesh, 0);
-
+        engine.MeshBundle.init(ecs.allocator, position);
+    const idx = try bundle.add_material(material);
+    try bundle.add_mesh(mesh, idx);
     var entity = try ecs.entities.register();
 
     try entity.addComponent(.bundle, bundle);

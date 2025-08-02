@@ -3,6 +3,26 @@ const std = @import("std");
 const zbt = @import("zbullet");
 const zm = @import("zmath");
 
+pub fn meshToBulletShape(mesh: rl.Mesh) !zbt.TriangleMeshShape {
+    var shape = zbt.initTriangleMeshShape();
+    const vertex_ptr: *const anyopaque = @ptrCast(@alignCast(mesh.vertices));
+    const vertex_stride: u32 = 3 * @sizeOf(f32); // Each vertex has 3 floats (x, y, z)
+    const vertex_count: u32 = @intCast(mesh.vertexCount);
+    const index_ptr: *const anyopaque = @ptrCast(@alignCast(mesh.indices));
+    const triangle_stride: u32 = 3 * @sizeOf(c_ushort); // 3 indices per triangle
+    const triangle_count: u32 = @intCast(mesh.triangleCount);
+    shape.addIndexVertexArray(
+        triangle_count,
+        index_ptr,
+        triangle_stride,
+        vertex_count,
+        vertex_ptr,
+        vertex_stride,
+    );
+
+    return shape;
+}
+
 /// uses ray-casting to check if a point is within a polygon.
 /// This will cast a ray from the point **TO THE RIGHT** and check if it intersects the polygon.
 /// If it intersects the polygon an **ODD** number of times, the point is inside the polygon
