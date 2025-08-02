@@ -1,15 +1,16 @@
 const std = @import("std");
 const engine = @import("engine_core");
 const game = @import("game_core");
+const ui = @import("raygui");
 const zbt = @import("zbullet");
 const rl = @import("raylib");
 
 const WINDOW_WIDTH = 800;
 const WINDOW_HEIGHT = 600;
 
-fn createNoiseImage(seed: u32, size: i32) !rl.Image {
+fn createNoiseImage(seed: u32, size: i32, scale: f32) !rl.Image {
     var img = rl.Image.genColor(size, size, rl.Color.black);
-    engine.noise.genPerlinNoise(&img, seed);
+    engine.noise.genPerlinNoise(&img, seed, scale);
 
     return img;
 }
@@ -36,21 +37,21 @@ pub fn main() !void {
 
     const size: i32 = 512;
     var seed = rng.random().int(u32);
-    var img = try createNoiseImage(seed, size);
+    var scale: f32 = 0.005;
+    var last_scale = scale;
+    var img = try createNoiseImage(seed, size, scale);
     const render_tex = try rl.RenderTexture2D.init(size, size);
 
     while (!rl.windowShouldClose()) {
-        if (rl.isKeyPressed(rl.KeyboardKey.r)) {
+        if (rl.isKeyPressed(rl.KeyboardKey.r) or last_scale != scale) {
             seed = rng.random().int(u32);
-            img = try createNoiseImage(seed, size);
+            img = try createNoiseImage(seed, size, scale);
         }
 
         rl.beginDrawing();
         defer rl.endDrawing();
-
         rl.clearBackground(rl.Color.black);
 
-        // Draw the circle texture to the render texture
         {
             rl.beginTextureMode(render_tex);
             defer rl.endTextureMode();
@@ -67,7 +68,6 @@ pub fn main() !void {
             );
         }
 
-        // Draw the render texture to the window
         rl.drawTextureRec(
             render_tex.texture,
             rl.Rectangle{
@@ -78,6 +78,15 @@ pub fn main() !void {
             },
             rl.Vector2{ .x = 0, .y = 0 },
             rl.Color.white,
+        );
+        last_scale = scale;
+        _ = ui.guiSliderBar(
+            rl.Rectangle{ .x = 10, .y = 10, .width = 200, .height = 20 },
+            "Min",
+            "Max",
+            &scale,
+            0.0,
+            0.1,
         );
     }
 }

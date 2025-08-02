@@ -89,7 +89,7 @@ pub const GameState = struct {
         rl.beginMode3D(camera_bundle.*);
         defer rl.endMode3D();
 
-        // Once the camera system has been run, we query for `MeshBundle`s
+        // Once the camera system has been run, we query for `MaterialMesh`s
         const bundle_sig = s: {
             var s = core.Ecs.Signature.initEmpty();
             s.set(@intFromEnum(core.Ecs.ComponentsTag.bundle));
@@ -132,7 +132,7 @@ pub const GameState = struct {
             // we draw any entities with a bundle
             for (bundle_entities.query) |id| {
                 const idx = ecs.entities.manager.index_map.get(id) orelse std.debug.panic("Entity: {} Has no index?\n", .{id});
-                const bundle = ecs.components.access(engine.MeshBundle, .bundle, idx).?;
+                const bundle = ecs.components.access(engine.MaterialMesh, .bundle, idx).?;
                 bundle.draw();
             }
         }

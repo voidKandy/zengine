@@ -21,6 +21,8 @@ pub fn sampleNormalPair(rng: *std.Random.DefaultPrng, mu: f32, sigma: f32) struc
     return .{ z0, z1 };
 }
 
+///! Perlin Noise
+/// [Shamelessly Ripped from here](https://pastebin.com/gXEYsmw8)
 fn randomGradient(
     seed: u32,
     ix: i32,
@@ -46,7 +48,8 @@ fn randomGradient(
     return rl.Vector2.init(@sin(random), @cos(random));
 }
 
-// Computes the dot product of the distance and gradient vectors.
+/// Computes the dot product of the distance and gradient vectors.
+/// requires `seed` because this function computes the random gradients in place rather than storing them
 fn dotGridGradient(seed: u32, ix: i32, iy: i32, x: f32, y: f32) f32 {
     // Get gradient from integer coordinates
     const gradient = randomGradient(seed, ix, iy);
@@ -90,10 +93,9 @@ pub fn perlinSample(x: f32, y: f32, seed: u32) f32 {
     return value;
 }
 
-pub fn genPerlinNoise(img: *rl.Image, seed: u32) void {
+pub fn genPerlinNoise(img: *rl.Image, seed: u32, scale: f32) void {
     std.debug.assert(img.width == img.height);
     const size: usize = @intCast(img.width);
-    const scale: f32 = 0.05;
 
     // First, generate a random gradient vector in the range [-1 , 1)
     for (0..size) |y| {

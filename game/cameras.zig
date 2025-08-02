@@ -52,7 +52,7 @@ pub const ORBITAL_CAMERA_SYSTEM = game.Ecs.System{
 
 /// We need an allocator so we can hold onto the query array as long as the system lives
 /// Tracks an entity with the camera, allowing impulses to be applied to the entity
-/// > Assumes the entity has a `MeshBundle` and a Physics Body
+/// > Assumes the entity has a `MaterialMesh` and a Physics Body
 pub fn trackingCameraSystem(allocator: std.mem.Allocator, entity_to_track: engine.ecs.Entity) game.Ecs.System {
     std.log.warn(
         \\ CREATING CAMERA TRACK SYSTEM THAT TRACKS ENTITY WITH ID: {d}
@@ -113,7 +113,7 @@ pub fn trackingCameraSystem(allocator: std.mem.Allocator, entity_to_track: engin
 
                 const tracked_entity_id = results[0].id;
                 const tracked_idx = myecs.entities.manager.index_map.get(tracked_entity_id).?;
-                const bundle = myecs.components.access(engine.MeshBundle, .bundle, tracked_idx) orelse @panic("NO BUNDLE??");
+                const bundle = myecs.components.access(engine.MaterialMesh, .bundle, tracked_idx) orelse @panic("NO BUNDLE??");
                 const body_id = myecs.components.access(i32, .body, tracked_idx) orelse @panic("NO BODY??");
                 const transform = bundle.transform;
 

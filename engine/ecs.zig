@@ -766,7 +766,7 @@ test "ECS Entity Management" {
         break :s s;
     } } } };
 
-    const matching = try ecs.entities.queryEntities(arena.allocator(), query) orelse @panic("NOTHING MATCHING");
+    const matching = try ecs.queryEntities(arena.allocator(), query) orelse @panic("NOTHING MATCHING");
 
     std.log.debug("got matching: {any}\n", .{matching});
     try std.testing.expect(std.mem.containsAtLeastScalar(Entity, matching.query, 1, entity_a.identifier));
