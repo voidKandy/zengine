@@ -7,16 +7,22 @@ const zbt = @import("zbullet");
 
 pub const CameraReference = struct { camera_id: u32, system_id: ?u32 = null };
 
+pub const NewState = struct {
+    window_height: f32,
+    window_width: f32,
+};
+
 pub const GameState = struct {
     window_height: f32,
     window_width: f32,
     /// Corresponds with the `camera_track` component
     /// Will change as the player rotates around the object
+    /// MUST BE MOVED TO ECS
     object_impulse: ?struct {
         position: rl.Vector3,
         target: rl.Vector3,
     } = null,
-    world: ?core.world.World = null,
+    island_curve: ?core.world.IslandCurve = null,
     /// Stores camera entity ID as well as it's associated system (if it has one)
     current_camera: ?usize,
     cameras: std.ArrayList(CameraReference),
@@ -42,6 +48,7 @@ pub const GameState = struct {
         const idx = self.current_camera orelse return null;
         return self.cameras.items[idx];
     }
+
     pub fn deinit(self: @This()) void {
         defer self.cameras.deinit();
         if (self.physics) |ph| {
@@ -96,7 +103,7 @@ pub const GameState = struct {
             break :s s;
         };
 
-        if (self.world) |world| {
+        if (self.island_curve) |curve| {
             std.log.warn(
                 \\ Drawing world
             , .{});
@@ -113,15 +120,15 @@ pub const GameState = struct {
                 core.world.BOX_MAX - core.world.BOX_MIN,
             );
 
-            world.curve.draw();
-            for (world.meshes) |mesh| {
+            curve.curve.draw();
+            for (curve.meshes) |mesh| {
                 mesh.draw();
                 // mesh.@"1".draw(material: Material, )
             }
             // for (world.polygons) |p| {
             //     p.draw();
             // }
-            if (world.debug_mode)
+            if (curve.debug_mode)
                 rl.drawCubeWires(box_center, box_size.x, box_size.y, box_size.z, rl.Color.light_gray);
         }
 

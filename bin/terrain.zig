@@ -1,6 +1,8 @@
 const std = @import("std");
+const ui = @import("raygui");
 const engine = @import("engine_core");
 const game = @import("game_core");
+const Ecs = game.Ecs;
 const zbt = @import("zbullet");
 const rl = @import("raylib");
 const LineSegment = engine.util.LineSegment;
@@ -12,20 +14,20 @@ const WINDOW_WIDTH = 800;
 const WINDOW_HEIGHT = 600;
 
 /// COPY PASTE Of RotateD6System
-pub const RotateTerrain = game.Ecs.System{
-    .queries = &[_]game.Ecs.Query{
-        game.Ecs.Query{
+pub const RotateTerrain = Ecs.System{
+    .queries = &[_]Ecs.Query{
+        Ecs.Query{
             .query = .{
-                .is = game.Ecs.QueryStatement.new(
+                .is = Ecs.QueryStatement.new(
                     .at_least,
-                    &[_]game.Ecs.ComponentsTag{.bundle},
+                    &[_]Ecs.ComponentsTag{.bundle},
                 ),
             },
         },
     },
     .schedule = .automatic,
     .runFn = struct {
-        fn run(results: []game.Ecs.QueryResult, myecs: *game.Ecs, state: *game.state.GameState) void {
+        fn run(results: []Ecs.QueryResult, myecs: *Ecs, state: *game.state.GameState) void {
             const dt = rl.getFrameTime();
             const rotation = rl.Matrix.rotateXYZ(rl.Vector3{
                 // .x = 2.0 * dt,
@@ -39,7 +41,7 @@ pub const RotateTerrain = game.Ecs.System{
             const e = results[0].query[0];
             const idx = myecs.entities.manager.index_map.get(e) orelse @panic("NO IDX?");
             std.log.warn("Got idx: {d}\n", .{idx});
-            const bundle = myecs.components.access(engine.MeshBundle, .bundle, idx) orelse @panic("NO BUNDLE?");
+            const bundle = myecs.components.access(engine.MaterialMesh, .bundle, idx) orelse @panic("NO BUNDLE?");
 
             bundle.transform = rl.Matrix.multiply(rotation, bundle.transform);
             _ = state;
@@ -47,7 +49,7 @@ pub const RotateTerrain = game.Ecs.System{
     }.run,
 };
 
-fn initState(allocator: std.mem.Allocator, ecs: *game.Ecs) !game.state.GameState {
+fn initState(allocator: std.mem.Allocator, ecs: *Ecs) !game.state.GameState {
     var physics_world = zbt.initWorld();
 
     const default_gravity: f32 = 10.0;
@@ -88,6 +90,31 @@ fn initState(allocator: std.mem.Allocator, ecs: *game.Ecs) !game.state.GameState
     return state;
 }
 
+pub fn MeshManipulation(mesh_id: engine.ecs.Entity) Ecs.System {
+    Ecs.System{
+        .queries = &[_]Ecs.Query{
+            Ecs.Query{ .id = mesh_id },
+        },
+        .runFn = struct {
+            fn run(results: []Ecs.QueryResult, myecs: *Ecs, state: *game.state.GameState) void {
+                const e = results[0].query[0];
+                const idx = myecs.entities.manager.index_map.get(e) orelse @panic("NO IDX?");
+                std.log.warn("Got idx: {d}\n", .{idx});
+                const bundle = myecs.components.access(engine.MaterialMesh, .bundle, idx) orelse @panic("NO BUNDLE?");
+                _ = bundle;
+                // bundle.meshes.items[0] =
+            }
+        }.run,
+    };
+}
+
+fn createNoiseImage(seed: u32, size: i32, scale: f32) !rl.Image {
+    var img = rl.Image.genColor(size, size, rl.Color.black);
+    engine.noise.genPerlinNoise(&img, seed, scale);
+
+    return img;
+}
+
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
@@ -98,7 +125,7 @@ pub fn main() !void {
     defer rl.closeWindow();
     rl.setTargetFPS(60);
 
-    var ecs = game.Ecs.init(&arena);
+    var ecs = Ecs.init(&arena);
     defer ecs.deinit();
     zbt.init(arena.allocator());
     defer zbt.deinit();
@@ -106,14 +133,17 @@ pub fn main() !void {
     defer state.deinit();
     _ = try ecs.systems.register(RotateTerrain);
 
-    const image = try rl.loadImage("resources/heightmap.png");
-    defer rl.unloadImage(image);
-    std.log.warn(
-        \\ IMAGE FORMAT: {any}
-        \\
-    , .{image.format});
-
-    // rl.imageFormat(&image, rl.PixelFormat.uncompressed_r8g8b8a8);
+    var rng = std.Random.DefaultPrng.init(blk: {
+        var seed: u64 = undefined;
+        try std.posix.getrandom(std.mem.asBytes(&seed));
+        break :blk seed;
+    });
+    const size: i32 = 512;
+    const seed = rng.random().int(u32);
+    var scale: f32 = 0.009;
+    var last_scale = scale;
+    var image = try createNoiseImage(seed, size, scale);
+    // const render_tex = try rl.RenderTexture2D.init(size, size);
 
     const mask = &[_]rl.Vector2{
         // .{
@@ -127,42 +157,7 @@ pub fn main() !void {
         .{ .x = 0.5, .y = -0.5 },
         .{ .x = 0.5, .y = 0.5 },
     };
-    // {
-    //     const width: usize = @intCast(image.width);
-    //     const height: usize = @intCast(image.height);
-
-    //     var pixels = @as([*]rl.Color, @ptrCast(image.data));
-
-    //     // Build your polygon vertex list in mask space
-    //     var mask_vertices = std.ArrayList(rl.Vector2).init(allocator);
-    //     defer mask_vertices.deinit();
-
-    //     // Masks, defined in normalized space, need to be translated to pixel space for accurate mapping over the original image
-    //     for (mask) |v| {
-    //         try mask_vertices.append(rl.Vector2{
-    //             .x = ((v.x * 0.5) + 0.5) * @as(f32, @floatFromInt(width - 1)),
-    //             .y = ((-v.y * 0.5) + 0.5) * @as(f32, @floatFromInt(height - 1)), // <-- flip Y!
-    //         });
-    //     }
-
-    //     // Loop through every pixel
-    //     for (0..height) |y_px| {
-    //         for (0..width) |x_px| {
-    //             const p = rl.Vector2{
-    //                 .x = @floatFromInt(x_px),
-    //                 .y = @floatFromInt(y_px),
-    //             };
-
-    //             if (!engine.util.pointInPolygon(p, mask_vertices.items)) {
-    //                 const idx = y_px * width + x_px;
-    //                 pixels[idx] = rl.Color.black;
-    //                 pixels[idx].a = 0;
-    //             }
-    //         }
-    //     }
-    // }
-
-    const texture = try rl.loadTextureFromImage(image);
+    var texture = try rl.loadTextureFromImage(image);
     defer rl.unloadTexture(texture);
 
     // this is the rectangle that represents the texture to be mapped over the mask
@@ -195,16 +190,11 @@ pub fn main() !void {
         };
     }
 
-    // if uncommented, move this block BEFORE `texture` is instantiated
-
     const mesh_size =
         rl.Vector3.init(16.0, 8.0, 16.0);
 
     var mesh = try engine.terrain.genMaskedImageMesh(arena.allocator(), image, mesh_size, mask, 2);
     // var mesh = try genMaskedImageMesh(arena.allocator(), image, mesh_size, null, 16);
-
-    rl.uploadMesh(&mesh, true);
-    // defer rl.unloadMesh(mesh);
 
     var material = try rl.loadMaterialDefault();
     // material.maps[0].color = rl.Color.ray_white;
@@ -215,7 +205,7 @@ pub fn main() !void {
     position.m14 = -8.0;
 
     var bundle =
-        engine.MeshBundle.init(ecs.allocator, position);
+        engine.MaterialMesh.init(ecs.allocator, position);
     const idx = try bundle.add_material(material);
     try bundle.add_mesh(mesh, idx);
     var entity = try ecs.entities.register();
@@ -225,21 +215,34 @@ pub fn main() !void {
     while (!rl.windowShouldClose()) {
         try ecs.runSystems(&state);
         try state.update(&ecs);
+        if (rl.isKeyPressed(rl.KeyboardKey.r) or last_scale != scale) {
+            // seed = rng.random().int(u32);
+            image = try createNoiseImage(seed, size, scale);
+            texture = try image.toTexture();
+            mesh = try engine.terrain.genMaskedImageMesh(arena.allocator(), image, mesh_size, mask, 2);
+        }
 
         rl.beginDrawing();
-        rl.clearBackground(rl.Color.black);
         defer rl.endDrawing();
-
-        try state.draw(&ecs);
+        rl.clearBackground(rl.Color.black);
 
         rl.drawTexture(texture, WINDOW_WIDTH - texture.width - 20, 20, rl.Color.white);
-        // rl.drawTriangleFan(mask, rl.Color.red);
-
         rl.drawRectangleLines(rect_x, rect_y, rect_w, rect_h, rl.Color.green);
+        try state.draw(&ecs);
+        // rl.drawTriangleFan(mask, rl.Color.red);
 
         // rl.drawTriangleStrip(&screen_mask, rl.Color.red);
         // rl.drawTriangleFan(&screen_mask, rl.Color.red);
 
+        last_scale = scale;
+        _ = ui.guiSliderBar(
+            rl.Rectangle{ .x = 10, .y = 10, .width = 200, .height = 20 },
+            "Min",
+            "Max",
+            &scale,
+            0.0,
+            0.1,
+        );
         rl.drawFPS(10, 10);
     }
 }

@@ -15,6 +15,7 @@ fn createNoiseImage(seed: u32, size: i32, scale: f32) !rl.Image {
     return img;
 }
 
+/// Create some kind of `StateObject` that has a ui presence
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
@@ -61,7 +62,7 @@ pub fn main() !void {
                     .x = 0.0,
                     .y = 0.0,
                     .width = @as(f32, @floatFromInt(size)),
-                    .height = -@as(f32, @floatFromInt(size)), // flip vertically
+                    .height = -@as(f32, @floatFromInt(size)),
                 },
                 rl.Vector2{ .x = 0, .y = 0 },
                 rl.Color.white,
@@ -74,7 +75,7 @@ pub fn main() !void {
                 .x = 0.0,
                 .y = 0.0,
                 .width = @as(f32, @floatFromInt(size)),
-                .height = -@as(f32, @floatFromInt(size)), // flip vertically
+                .height = -@as(f32, @floatFromInt(size)),
             },
             rl.Vector2{ .x = 0, .y = 0 },
             rl.Color.white,

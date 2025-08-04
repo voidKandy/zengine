@@ -4,11 +4,11 @@ const engine = @import("engine_core");
 const LineSegment = engine.util.LineSegment;
 const Vector3 = rl.Vector3;
 
-// World box min and max
+// IslandCurve box min and max
 pub const BOX_MIN: f32 = -16.0;
 pub const BOX_MAX: f32 = 16.0;
 
-pub const World = struct {
+pub const IslandCurve = struct {
     size: f32,
     curve: Curve3D,
     debug_mode: bool = true,
@@ -18,14 +18,14 @@ pub const World = struct {
     /// For now, we will just give every mesh a single heightmap.
     /// Eventually each should be able to have their own
     heightmap: rl.Image,
-    meshes: []engine.MeshBundle,
+    meshes: []engine.MaterialMesh,
     pub fn generate(allocator: std.mem.Allocator, rng: *std.Random.DefaultPrng, heightmap: rl.Image, world_size: f32) !@This() {
         const amt_polies = rng.random().intRangeAtMost(usize, 3, 8);
         const curve = Curve3D.generate(rng);
         const polygons = try randomNormPolies(allocator, amt_polies, rng, curve);
         defer allocator.free(polygons);
 
-        const meshes = try allocator.alloc(engine.MeshBundle, amt_polies);
+        const meshes = try allocator.alloc(engine.MaterialMesh, amt_polies);
         const mesh_size = rl.Vector3.init(
             world_size / 100.0,
             world_size / 100.0,
@@ -45,7 +45,7 @@ pub const World = struct {
                     mat.m14 = p.position.z;
                     break :transform mat;
                 };
-            var bundle = engine.MeshBundle.init(allocator, transform);
+            var bundle = engine.MaterialMesh.init(allocator, transform);
             const idx = try bundle.add_material(material);
             const mesh =
                 try engine.terrain.genMaskedImageMesh(allocator, heightmap, mesh_size, p.vertices, 4);
@@ -169,7 +169,7 @@ pub const TerrainPolygon = struct {
     position: Vector3,
     /// This defines the polygon mask where the mesh is generated
     /// MUST be defined in normalized space
-    /// (-1 : 1)
+    /// (-1, 1]
     vertices: []rl.Vector2,
 
     /// should be called with the same allocator used to `generateVertices`

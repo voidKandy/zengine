@@ -84,6 +84,7 @@ fn createOffsetPerimeter(
     }
 }
 
+/// Generates a mesh from the given Image
 /// Calls `rl.uploadMesh`
 pub fn genMaskedImageMesh(
     allocator: std.mem.Allocator,
