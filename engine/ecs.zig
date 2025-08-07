@@ -836,28 +836,30 @@ test "ECS Entity Management" {
 
     // Systems
     // ---
-    const some_system = try MyEcs.System.init(ecs.allocator, struct {
-        call_count: u32,
-        fn run(self: *@This(), results: []MyEcs.QueryResult, myecs: *MyEcs, state: *State) anyerror!void {
-            _ = state;
-            warn("IN SOME SYSTEM\n", .{});
-            self.call_count += 1;
-            for (results) |r| {
-                for (r.query) |e| {
-                    warn("MUTATING ENTITY: {}", .{e});
-                    const idx = e.index() orelse @panic("ENTITY SHOULD HAVE AN INDEX?");
-                    const v = myecs.components.access(u32, .someothercomponent, idx) orelse @panic("SHOULD HAVE THIS COMPONENT?");
-                    warn("VAL: {}", .{v.*});
-                    const new: u32 = 1111;
-                    myecs.components.insert(myecs.allocator, .someothercomponent, idx, new) catch @panic("FAILED TO INSERT COMPONENT");
+    const SomeSysState =
+        struct {
+            call_count: u32,
+            fn run(self: *@This(), results: []MyEcs.QueryResult, myecs: *MyEcs, state: *State) anyerror!void {
+                _ = state;
+                warn("IN SOME SYSTEM\n", .{});
+                self.call_count += 1;
+                for (results) |r| {
+                    for (r.query) |e| {
+                        warn("MUTATING ENTITY: {}", .{e});
+                        const idx = e.index() orelse @panic("ENTITY SHOULD HAVE AN INDEX?");
+                        const v = myecs.components.access(u32, .someothercomponent, idx) orelse @panic("SHOULD HAVE THIS COMPONENT?");
+                        warn("VAL: {}", .{v.*});
+                        const new: u32 = 1111;
+                        myecs.components.insert(myecs.allocator, .someothercomponent, idx, new) catch @panic("FAILED TO INSERT COMPONENT");
+                    }
                 }
             }
-        }
-    }, .{ .call_count = 0 }, .automatic, &[_]MyEcs.Query{.{ .query = .{
+        };
+    const some_system = try MyEcs.System.init(ecs.allocator, SomeSysState, .{ .call_count = 0 }, .automatic, &[_]MyEcs.Query{.{ .query = .{
         .is = MyEcs.QueryStatement.new(.at_least, &[_]MyEcs.ComponentsTag{.someothercomponent}),
     } }});
 
-    _ = try ecs.systems.register(some_system);
+    _, const sys_idx = try ecs.systems.register(some_system);
 
     var state = State{};
     try ecs.runSystems(&state);
@@ -868,6 +870,10 @@ test "ECS Entity Management" {
             1111,
             got.*,
         );
+        try std.testing.expect(blk: {
+            const st: *SomeSysState = @ptrCast(@alignCast(ecs.systems.data[sys_idx].?.inner));
+            break :blk st.*.call_count == 1;
+        });
     }
     // {
     //     const got = ecs.components.access(u8, MyEcs.ComponentsTag.othercomponent, entity_c.index().?) orelse @panic("Nothing at that index");
