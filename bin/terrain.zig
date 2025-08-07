@@ -13,40 +13,26 @@ const Vector3 = rl.Vector3;
 const WINDOW_WIDTH = 800;
 const WINDOW_HEIGHT = 600;
 
-/// COPY PASTE Of RotateD6System
-pub const RotateTerrain = Ecs.System{
-    .queries = &[_]Ecs.Query{
-        Ecs.Query{
-            .query = .{
-                .is = Ecs.QueryStatement.new(
-                    .at_least,
-                    &[_]Ecs.ComponentsTag{.bundle},
-                ),
-            },
-        },
-    },
-    .schedule = .automatic,
-    .runFn = struct {
-        fn run(results: []Ecs.QueryResult, myecs: *Ecs, state: *game.state.GameState) void {
-            const dt = rl.getFrameTime();
-            const rotation = rl.Matrix.rotateXYZ(rl.Vector3{
-                // .x = 2.0 * dt,
-                .x = 0.0,
-                .y = 0.5 * dt,
-                .z = 0.0,
-                // .y = 0.5 * dt,
-                // .z = 1.5 * dt,
-            });
+const RotateMeshSystem = struct {
+    mesh_id: engine.Entity,
 
-            const e = results[0].query[0];
-            const idx = myecs.entities.manager.index_map.get(e) orelse @panic("NO IDX?");
-            std.log.warn("Got idx: {d}\n", .{idx});
-            const bundle = myecs.components.access(engine.MaterialMesh, .bundle, idx) orelse @panic("NO BUNDLE?");
+    pub fn run(self: *@This(), results: []Ecs.QueryResult, myecs: *Ecs, state: *game.state.GameState) void {
+        _ = results;
+        const dt = rl.getFrameTime();
+        const idx = myecs.entities.manager.index_map.get(self.mesh_id) orelse @panic("NO IDX?");
+        const mat_mesh = myecs.components.access(engine.MaterialMesh, .material_mesh, idx) orelse @panic("NO MAT MESH?");
+        const rotation = rl.Matrix.rotateXYZ(rl.Vector3{
+            // .x = 2.0 * dt,
+            .x = 0.0,
+            .y = 0.5 * dt,
+            .z = 0.0,
+            // .y = 0.5 * dt,
+            // .z = 1.5 * dt,
+        });
 
-            bundle.transform = rl.Matrix.multiply(rotation, bundle.transform);
-            _ = state;
-        }
-    }.run,
+        mat_mesh.transform = rl.Matrix.multiply(rotation, mat_mesh.transform);
+        _ = state;
+    }
 };
 
 fn initState(allocator: std.mem.Allocator, ecs: *Ecs) !game.state.GameState {
@@ -90,6 +76,20 @@ fn initState(allocator: std.mem.Allocator, ecs: *Ecs) !game.state.GameState {
     return state;
 }
 
+const NoiseOptions = struct {
+    scale: f32,
+    seed: u32,
+    size: i32,
+    color: rl.Color = rl.Color.black,
+
+    fn createNoiseImage(self: @This()) !rl.Image {
+        var img = rl.Image.genColor(self.size, self.size, self.color);
+        engine.noise.genPerlinNoise(&img, self.seed, self.scale);
+
+        return img;
+    }
+};
+
 // fn MeshNoiseImageSystem(mesh_id: engine.Entity, image_id: engine.Entity) type {
 //     return Ecs.System(
 //         &[_]Ecs.Query{
@@ -126,38 +126,6 @@ fn initState(allocator: std.mem.Allocator, ecs: *Ecs) !game.state.GameState {
 //     );
 // }
 
-pub fn MeshMirrorNoiseImage(mesh: engine.ecs.Entity) Ecs.System {
-    Ecs.System{
-        .queries = &[_]Ecs.Query{
-            Ecs.Query{ .id = mesh },
-        },
-        .runFn = struct {
-
-            // const  last_scale ;
-            fn run(results: []Ecs.QueryResult, myecs: *Ecs, state: *game.state.GameState) void {
-                _ = state;
-                const e = results[0].query[0];
-                const idx = myecs.entities.manager.index_map.get(e) orelse @panic("NO IDX?");
-                std.log.warn("Got idx: {d}\n", .{idx});
-                const bundle = myecs.components.access(engine.MaterialMesh, .bundle, idx) orelse @panic("NO BUNDLE?");
-                _ = bundle;
-
-                if (rl.isKeyPressed(rl.KeyboardKey.r) or last_scale != scale) {
-                    // seed = rng.random().int(u32);
-                    image = noise.createNoiseImage(seed, size, scale);
-                    texture = try image.toTexture();
-                    // mesh = try engine.terrain.genMaskedImageMesh(arena.allocator(), image, mesh_size, mask, 2);
-                }
-                // const new_mesh = try engine.terrain.genMaskedImageMesh(myecs.allocator, image, mesh_size, mask, 2);
-
-                // For now this is just a magic number
-                // BAD!!
-                // bundle.meshes.items[0] = new_mesh;
-            }
-        }.run,
-    };
-}
-
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
@@ -174,7 +142,6 @@ pub fn main() !void {
     defer zbt.deinit();
     var state = try initState(arena.allocator(), &ecs);
     defer state.deinit();
-    _ = try ecs.systems.register(RotateTerrain);
 
     var rng = std.Random.DefaultPrng.init(blk: {
         var seed: u64 = undefined;
@@ -187,7 +154,7 @@ pub fn main() !void {
         .scale = 0.009,
     };
     // var last_scale = scale;
-    var image = try noise.createNoiseImage();
+    const image = try noise.createNoiseImage();
     // const render_tex = try rl.RenderTexture2D.init(size, size);
 
     const mask = &[_]rl.Vector2{
@@ -202,7 +169,7 @@ pub fn main() !void {
         .{ .x = 0.5, .y = -0.5 },
         .{ .x = 0.5, .y = 0.5 },
     };
-    var texture = try rl.loadTextureFromImage(image);
+    const texture = try rl.loadTextureFromImage(image);
     defer rl.unloadTexture(texture);
 
     // this is the rectangle that represents the texture to be mapped over the mask
@@ -238,7 +205,7 @@ pub fn main() !void {
     const mesh_size =
         rl.Vector3.init(16.0, 8.0, 16.0);
 
-    var mesh = try engine.terrain.genMaskedImageMesh(arena.allocator(), image, mesh_size, mask, 2);
+    const mesh = try engine.terrain.genMaskedImageMesh(arena.allocator(), image, mesh_size, mask, 2);
     // var mesh = try genMaskedImageMesh(arena.allocator(), image, mesh_size, null, 16);
 
     var material = try rl.loadMaterialDefault();
@@ -249,13 +216,17 @@ pub fn main() !void {
     position.m12 = -8.0;
     position.m14 = -8.0;
 
-    var bundle =
+    var mat_mesh =
         engine.MaterialMesh.init(ecs.allocator, position);
-    const idx = try bundle.add_material(material);
-    try bundle.add_mesh(mesh, idx);
+    const idx = try mat_mesh.add_material(material);
+    try mat_mesh.add_mesh(mesh, idx);
     var entity = try ecs.entities.register();
 
-    try entity.addComponent(.bundle, bundle);
+    try entity.addComponent(.material_mesh, mat_mesh);
+
+    const rotate_system = try Ecs.System.init(ecs.allocator, RotateMeshSystem, .{ .mesh_id = entity.identifier }, .automatic, null);
+    // defer rotate_system.deinit(ecs.allocator);
+    _ = try ecs.systems.register(rotate_system);
 
     while (!rl.windowShouldClose()) {
         try ecs.runSystems(&state);
@@ -273,12 +244,12 @@ pub fn main() !void {
         // rl.drawTriangleStrip(&screen_mask, rl.Color.red);
         // rl.drawTriangleFan(&screen_mask, rl.Color.red);
 
-        last_scale = scale;
+        // last_scale = scale;
         _ = ui.guiSliderBar(
             rl.Rectangle{ .x = 10, .y = 10, .width = 200, .height = 20 },
             "Min",
             "Max",
-            &scale,
+            &noise.scale,
             0.0,
             0.1,
         );

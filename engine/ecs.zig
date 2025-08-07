@@ -80,7 +80,7 @@ fn IdentifierManager(
         }
 
         /// Returns a tuple of the `Identifier` (`u32`) and the index of the registered data
-        fn register(
+        pub fn register(
             self: *Self,
             data: Data,
         ) Error!struct { Identifier, usize } {
@@ -207,7 +207,7 @@ pub fn Ecs(
 
         /// If `ECS` finds no enities matching `queries`, the system will not run
         /// If `queries` field is null, the system will run regardless
-        const System = struct {
+        pub const System = struct {
             disabled: bool = false,
             schedule: SysSchedule,
             queries: ?[]const Query,
@@ -215,9 +215,9 @@ pub fn Ecs(
             runFn: *const fn (*anyopaque, []QueryResult, *ThisEcs, *Options.State) anyerror!void,
 
             /// **Requirements** for type passed as `T`:
-            /// `run` function that has the signature:
+            /// **PUBLIC** `run` function that has the signature:
             ///  `const fn (@This(), []QueryResult, *ThisEcs, *Options.State) anyerror!void`
-            fn init(allocator: Allocator, T: type, v: T, schedule: SysSchedule, queries: ?[]const Query) Allocator.Error!*@This() {
+            pub fn init(allocator: Allocator, T: type, v: T, schedule: SysSchedule, queries: ?[]const Query) Allocator.Error!*@This() {
                 const system = try allocator.create(@This());
                 const inner = try allocator.create(T);
                 inner.* = v;
@@ -236,7 +236,7 @@ pub fn Ecs(
                 return system;
             }
 
-            fn deinit(self: *@This(), allocator: Allocator) void {
+            pub fn deinit(self: *@This(), allocator: Allocator) void {
                 allocator.free(self.inner);
                 allocator.free(self);
             }
@@ -875,12 +875,8 @@ test "ECS Entity Management" {
             break :blk st.*.call_count == 1;
         });
     }
-    // {
-    //     const got = ecs.components.access(u8, MyEcs.ComponentsTag.othercomponent, entity_c.index().?) orelse @panic("Nothing at that index");
-    //     try std.testing.expectEqual(
-    //         49,
-    //         got.*,
-    //     );
-    // }
-    std.debug.print("ENTITY MANAGEMENT WORKS AS EXPECTED\n", .{});
+
+    std.debug.print(
+        \\ ENTITY MANAGEMENT & SYSTEMS WORKS AS EXPECTED
+    , .{});
 }

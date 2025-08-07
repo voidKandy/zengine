@@ -7,7 +7,7 @@ pub const noise = @import("noise.zig");
 pub const MaterialMesh = @import("MaterialMesh.zig");
 pub const SampledTerrain = @import("SampledTerrain.zig");
 const Type = std.builtin.Type;
-const Entity = ecs.Entity;
+pub const Entity = ecs.Entity;
 
 test {
     std.testing.refAllDecls(@This());

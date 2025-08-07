@@ -136,9 +136,9 @@ pub const GameState = struct {
 
         if (bundle_query_result) |bundle_entities| {
             // we draw any entities with a bundle
-            for (bundle_entities.query) |id| {
-                const idx = ecs.entities.manager.index_map.get(id) orelse std.debug.panic("Entity: {} Has no index?\n", .{id});
-                const bundle = ecs.components.access(engine.MaterialMesh, .bundle, idx).?;
+            for (bundle_entities.query) |handle| {
+                const idx = handle.index() orelse std.debug.panic("Entity: {} Has no index?\n", .{handle});
+                const bundle = ecs.components.access(engine.MaterialMesh, .material_mesh, idx).?;
                 bundle.draw();
             }
         }
