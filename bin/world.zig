@@ -67,7 +67,7 @@ fn initState(allocator: std.mem.Allocator, ecs: *game.Ecs, rng: *std.Random.Defa
 
         var handle = try ecs.entities.register();
         try handle.addComponent(.camera, camera);
-        try cameras.append(game.state.CameraReference{ .camera_id = handle.identifier, .system_id = static_sys_id });
+        try cameras.append(game.state.CameraReference{ .id = handle.identifier, .system_id = static_sys_id });
     }
 
     // Birds eye view camera
@@ -82,8 +82,8 @@ fn initState(allocator: std.mem.Allocator, ecs: *game.Ecs, rng: *std.Random.Defa
             };
 
         var handle = try ecs.entities.register();
-        try handle.addComponent(.camera, camera);
-        try cameras.append(game.state.CameraReference{ .camera_id = handle.identifier, .system_id = static_sys_id });
+        try handle.addComponent(.camera3D, camera);
+        try cameras.append(game.state.CameraReference{ .id = handle.identifier, .system_id = static_sys_id });
     }
 
     // Each mesh gets a camera looking at the position of that poly
@@ -103,8 +103,8 @@ fn initState(allocator: std.mem.Allocator, ecs: *game.Ecs, rng: *std.Random.Defa
         };
 
         var handle = try ecs.entities.register();
-        try handle.addComponent(.camera, camera);
-        try cameras.append(game.state.CameraReference{ .camera_id = handle.identifier, .system_id = static_sys_id });
+        try handle.addComponent(.camera3D, camera);
+        try cameras.append(game.state.CameraReference{ .id = handle.identifier, .system_id = static_sys_id });
     }
 
     const state = game.state.GameState{

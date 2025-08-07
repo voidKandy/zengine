@@ -1,34 +1,32 @@
-const core = @import("root.zig");
+const game = @import("root.zig");
 const engine = @import("engine_core");
 const zm = @import("zmath");
 const rl = @import("raylib");
 const std = @import("std");
 const zbt = @import("zbullet");
 
-pub const CameraReference = struct { camera_id: u32, system_id: ?u32 = null };
+/// maybe this should be abstracted??
+pub const EcsCameraReference = struct { id: u32, system_id: ?u32 = null };
 
-pub const NewState = struct {
-    window_height: f32,
-    window_width: f32,
-};
-
+// inline core.Ecs.Opts.components.
 pub const GameState = struct {
     window_height: f32,
     window_width: f32,
     /// Corresponds with the `camera_track` component
     /// Will change as the player rotates around the object
     /// MUST BE MOVED TO ECS
-    object_impulse: ?struct {
-        position: rl.Vector3,
-        target: rl.Vector3,
-    } = null,
-    island_curve: ?core.world.IslandCurve = null,
+    // object_impulse: ?struct {
+    //     position: rl.Vector3,
+    //     target: rl.Vector3,
+    // } = null,
+    // island_curve: ?core.world.IslandCurve = null,
     /// Stores camera entity ID as well as it's associated system (if it has one)
     current_camera: ?usize,
-    cameras: std.ArrayList(CameraReference),
+    cameras: std.ArrayList(EcsCameraReference),
     // cameras: std.AutoHashMap(u32, rl.Camera3D),
     /// Maybe this is *BAD*?
-    upward_face: ?u32 = null,
+    /// Yeah, it is. Should be implemented in the ui
+    // upward_face: ?u32 = null,
     physics: ?struct {
         world: zbt.World,
         debug: *zbt.DebugDrawer,
@@ -44,7 +42,8 @@ pub const GameState = struct {
     //     }
     // }
 
-    pub fn currentCamera(self: @This()) ?CameraReference {
+    /// syntactic sugar
+    pub fn currentCamera(self: @This()) ?EcsCameraReference {
         const idx = self.current_camera orelse return null;
         return self.cameras.items[idx];
     }
@@ -64,7 +63,7 @@ pub const GameState = struct {
         // self.pick.p2p.dealloc();
     }
 
-    pub fn update(self: *@This(), ecs: *core.Ecs) !void {
+    pub fn update(self: *@This(), ecs: *game.Ecs) !void {
         const cam_ref = self.currentCamera() orelse @panic("NO CAMERA??");
         std.log.warn(
             \\ GOT CAM REF: {any}
@@ -84,13 +83,13 @@ pub const GameState = struct {
             try ecs.runSystem(self, sys);
         }
     }
-    pub fn draw(self: @This(), ecs: *core.Ecs) !void {
+    pub fn draw(self: @This(), ecs: *game.Ecs) !void {
 
         // First, camera stuff
-        const cam_ref = self.cameras.items[self.current_camera orelse @panic("NO CURRENT CAMERA!!")];
+        const cam_ref = self.currentCamera() orelse @panic("NO CURRENT CAMERA!!");
         const camera_bundle = cam: {
-            const idx = ecs.entities.manager.index_map.get(cam_ref.camera_id) orelse @panic("NO CAMERA??");
-            break :cam ecs.components.access(rl.Camera3D, .camera, idx) orelse @panic("NO CAMERA BUNDLE?");
+            const idx = ecs.entities.manager.index_map.get(cam_ref.id) orelse @panic("NO CAMERA??");
+            break :cam ecs.components.access(rl.Camera3D, .camera3D, idx) orelse @panic("NO CAMERA BUNDLE?");
         };
 
         rl.beginMode3D(camera_bundle.*);
@@ -98,42 +97,42 @@ pub const GameState = struct {
 
         // Once the camera system has been run, we query for `MaterialMesh`s
         const bundle_sig = s: {
-            var s = core.Ecs.Signature.initEmpty();
-            s.set(@intFromEnum(core.Ecs.ComponentsTag.bundle));
+            var s = game.Ecs.Signature.initEmpty();
+            s.set(@intFromEnum(game.Ecs.ComponentsTag.material_mesh));
             break :s s;
         };
 
-        if (self.island_curve) |curve| {
-            std.log.warn(
-                \\ Drawing world
-            , .{});
+        // if (self.island_curve) |curve| {
+        //     std.log.warn(
+        //         \\ Drawing world
+        //     , .{});
 
-            // For drawing the world boundaries in debug mode
-            const box_center = rl.Vector3.init(
-                (core.world.BOX_MIN + core.world.BOX_MAX) / 2.0,
-                (core.world.BOX_MIN + core.world.BOX_MAX) / 2.0,
-                (core.world.BOX_MIN + core.world.BOX_MAX) / 2.0,
-            );
-            const box_size = rl.Vector3.init(
-                core.world.BOX_MAX - core.world.BOX_MIN,
-                core.world.BOX_MAX - core.world.BOX_MIN,
-                core.world.BOX_MAX - core.world.BOX_MIN,
-            );
+        //     // For drawing the world boundaries in debug mode
+        //     const box_center = rl.Vector3.init(
+        //         (game.world.BOX_MIN + game.world.BOX_MAX) / 2.0,
+        //         (game.world.BOX_MIN + game.world.BOX_MAX) / 2.0,
+        //         (game.world.BOX_MIN + game.world.BOX_MAX) / 2.0,
+        //     );
+        //     const box_size = rl.Vector3.init(
+        //         game.world.BOX_MAX - game.world.BOX_MIN,
+        //         game.world.BOX_MAX - game.world.BOX_MIN,
+        //         game.world.BOX_MAX - game.world.BOX_MIN,
+        //     );
 
-            curve.curve.draw();
-            for (curve.meshes) |mesh| {
-                mesh.draw();
-                // mesh.@"1".draw(material: Material, )
-            }
-            // for (world.polygons) |p| {
-            //     p.draw();
-            // }
-            if (curve.debug_mode)
-                rl.drawCubeWires(box_center, box_size.x, box_size.y, box_size.z, rl.Color.light_gray);
-        }
+        //     curve.curve.draw();
+        //     for (curve.meshes) |mesh| {
+        //         mesh.draw();
+        //         // mesh.@"1".draw(material: Material, )
+        //     }
+        //     // for (world.polygons) |p| {
+        //     //     p.draw();
+        //     // }
+        //     if (curve.debug_mode)
+        //         rl.drawCubeWires(box_center, box_size.x, box_size.y, box_size.z, rl.Color.light_gray);
+        // }
 
         const bundle_query_result =
-            try ecs.queryEntities(ecs.allocator, core.Ecs.Query{ .query = .{ .is = core.Ecs.QueryStatement{ .rule = .at_least, .sig = bundle_sig } } });
+            try ecs.queryEntities(ecs.allocator, game.Ecs.Query{ .query = .{ .is = game.Ecs.QueryStatement{ .rule = .at_least, .sig = bundle_sig } } });
 
         if (bundle_query_result) |bundle_entities| {
             // we draw any entities with a bundle
@@ -145,16 +144,16 @@ pub const GameState = struct {
         }
 
         // draw the impulse line
-        if (self.object_impulse) |impulse| {
-            rl.drawText("Press [P] to push the object", 50, 50, 10, rl.Color.green);
-            rl.drawCube(impulse.position, 0.1, 0.1, 0.1, rl.Color.ray_white);
-            rl.drawLine3D(impulse.position, impulse.target, rl.Color.red);
-        }
+        // if (self.object_impulse) |impulse| {
+        //     rl.drawText("Press [P] to push the object", 50, 50, 10, rl.Color.green);
+        //     rl.drawCube(impulse.position, 0.1, 0.1, 0.1, rl.Color.ray_white);
+        //     rl.drawLine3D(impulse.position, impulse.target, rl.Color.red);
+        // }
 
-        if (self.upward_face) |face| {
-            const text = try std.fmt.allocPrintZ(ecs.allocator, "Upward face: {}", .{face});
-            rl.drawText(text, 100, 100, 10, rl.Color.green);
-        }
+        // if (self.upward_face) |face| {
+        //     const text = try std.fmt.allocPrintZ(ecs.allocator, "Upward face: {}", .{face});
+        //     rl.drawText(text, 100, 100, 10, rl.Color.green);
+        // }
 
         // draw a grid just cuz
         rl.drawGrid(200, 5.0);

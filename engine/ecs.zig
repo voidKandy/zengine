@@ -1,7 +1,7 @@
 const rl = @import("raylib");
 const std = @import("std");
 const zbt = @import("zbullet");
-const core = @import("root.zig");
+const engine = @import("root.zig");
 const warn = std.log.warn;
 const Type = std.builtin.Type;
 const Shape = zbt.Shape;
@@ -80,7 +80,7 @@ fn IdentifierManager(
         }
 
         /// Returns a tuple of the `Identifier` (`u32`) and the index of the registered data
-        pub fn register(
+        fn register(
             self: *Self,
             data: Data,
         ) Error!struct { Identifier, usize } {
@@ -162,14 +162,15 @@ fn IdentifierManager(
     };
 }
 
-pub const Component = struct { [:0]const u8, type };
+pub const ComponentDecl = struct { [:0]const u8, type };
 pub const Entity = u32;
 
 pub const EcsOptions = struct {
     max_entities: usize,
     max_systems: usize,
     State: type,
-    components: []const Component,
+    components: []const ComponentDecl,
+    // systems: []type,
 };
 
 /// Entity Component System "Coordinator"
@@ -191,8 +192,9 @@ pub fn Ecs(
         /// archetype.set(@intFromEnum(ComponentsTag.othercomponent));
         /// ```
         pub const Signature = std.bit_set.IntegerBitSet(@intCast(Options.components.len));
+        /// enum that has a variant for each component in the ecs
         pub const ComponentsTag = ComponentsManager.Tag;
-
+        /// struct that has a field for each component in the ecs
         /// Systems tagged `automatic` will be run always, during the `runSystems` function
         /// Systems tagged `explicit` will only run if they are run somehow in user space
         pub const SysSchedule = enum {
@@ -205,21 +207,42 @@ pub fn Ecs(
 
         /// If `ECS` finds no enities matching `queries`, the system will not run
         /// If `queries` field is null, the system will run regardless
-        pub const System = struct {
+        const System = struct {
             disabled: bool = false,
             schedule: SysSchedule,
             queries: ?[]const Query,
-            /// Each `QueryResult` in this function corresponds to each `Query` for the given system
-            runFn: SystemFn,
+            inner: *anyopaque,
+            runFn: *const fn (*anyopaque, []QueryResult, *ThisEcs, *Options.State) anyerror!void,
+
+            /// **Requirements** for type passed as `T`:
+            /// `run` function that has the signature:
+            ///  `const fn (@This(), []QueryResult, *ThisEcs, *Options.State) anyerror!void`
+            fn init(allocator: Allocator, T: type, v: T, schedule: SysSchedule, queries: ?[]const Query) Allocator.Error!*@This() {
+                const system = try allocator.create(@This());
+                const inner = try allocator.create(T);
+                inner.* = v;
+
+                system.* = @This(){
+                    .schedule = schedule,
+                    .inner = @ptrCast(inner),
+                    .queries = queries,
+                    .runFn = struct {
+                        fn run(val: *anyopaque, r: []QueryResult, ecs: *ThisEcs, state: *Options.State) anyerror!void {
+                            const val_as_type: *T = @ptrCast(@alignCast(val));
+                            return T.run(val_as_type, r, ecs, state);
+                        }
+                    }.run,
+                };
+                return system;
+            }
+
+            fn deinit(self: *@This(), allocator: Allocator) void {
+                allocator.free(self.inner);
+                allocator.free(self);
+            }
         };
 
-        /// Arguments are as follows:
-        /// *Results* of queries in order the queries are passed in the System's `queries` field
-        /// Reference to *Ecs*
-        /// Reference to *State*
-        const SystemFn = *const fn ([]QueryResult, *ThisEcs, *Options.State) void;
-
-        const SystemManager = IdentifierManager(Options.max_systems, System);
+        const SystemManager = IdentifierManager(Options.max_systems, *System);
 
         /// this is an allocator returned by `ArenaAllocator.allocator()`
         allocator: Allocator,
@@ -246,7 +269,7 @@ pub fn Ecs(
             self.components.deinit(self.allocator);
         }
 
-        pub fn runSystem(self: *ThisEcs, state: *ThisEcs.State, system: System) !void {
+        pub fn runSystem(self: *ThisEcs, state: *ThisEcs.State, system: *System) !void {
             const results = queries: {
                 var all: [Options.max_entities]QueryResult = undefined;
                 var amt: usize = 0;
@@ -270,7 +293,7 @@ pub fn Ecs(
                     \\
                     \\ Got Entities Matching: {any}
                 , .{results});
-                system.runFn(results, self, state);
+                try system.runFn(system.inner, results, self, state);
             } else {
                 std.log.warn(
                     \\
@@ -293,8 +316,8 @@ pub fn Ecs(
             }
         }
 
-        pub fn entityHandle(self: *ThisEcs, entity: Entity) EntityManager.EntityHandle {
-            return EntityManager.EntityHandle{ .ecs = self, .identifier = entity };
+        pub fn entityHandle(self: *ThisEcs, entity: Entity) EntityHandle {
+            return EntityHandle{ .ecs = self, .identifier = entity };
         }
         /// Returns the signature associated with the given component
         pub fn componentSignature(tag: ComponentsTag) Signature {
@@ -335,24 +358,24 @@ pub fn Ecs(
                 \\
             , .{query});
 
-            var all = std.ArrayList(Entity).init(allocator);
+            var all = std.ArrayList(ThisEcs.EntityHandle).init(allocator);
             // First, we get a result based purely on which type/tag the entity matches
             get_entities: {
                 switch (query) {
-                    .id => |entity_id| {
+                    .id => |entity| {
                         std.log.warn(
                             \\ ALL ENTITIES:
                             \\ {any}
                         , .{self.entities.manager.lastRegistered()});
-                        if (self.entities.manager.index_map.get(entity_id)) |_| {
-                            try all.append(entity_id);
+                        if (self.entities.manager.index_map.get(entity)) |_| {
+                            try all.append(self.entityHandle(entity));
                             break :get_entities;
                         }
 
                         std.log.warn(
                             \\
                             \\ DIRECT QUERY RETURNED NO ENTITY FOR ID: {d}
-                        , .{entity_id});
+                        , .{entity});
                         break :get_entities;
                     },
                     .query => |q| {
@@ -385,7 +408,7 @@ pub fn Ecs(
                             }
 
                             if (is_match and !is_not_match) {
-                                try all.append(entity.*);
+                                try all.append(self.entityHandle(entity.*));
                             }
                         }
                         if (all.items.len > 0)
@@ -400,7 +423,7 @@ pub fn Ecs(
             switch (query) {
                 .id => {
                     std.debug.assert(all.items.len <= 1);
-                    return QueryResult{ .id = query.id };
+                    return QueryResult{ .id = self.entityHandle(query.id) };
                 },
                 .query => return QueryResult{ .query = try all.toOwnedSlice() },
             }
@@ -437,8 +460,6 @@ pub fn Ecs(
             }
         };
 
-        pub const ComponentRule =
-            struct { ComponentsTag, *anyopaque };
         pub const QueryStatement = struct {
             rule: QueryRule,
             sig: Signature,
@@ -459,32 +480,33 @@ pub fn Ecs(
             },
         };
 
-        pub const QueryResult = union(QueryType) { id: Entity, query: []Entity };
+        pub const QueryResult = union(QueryType) { id: ThisEcs.EntityHandle, query: []ThisEcs.EntityHandle };
 
+        pub const ComponentRule =
+            struct { ComponentsTag, *anyopaque };
         const ComponentsManager = cmp_man: {
             const N = Options.components.len;
             const ComponentTag: type, const TypeArr: [N]type = blk: {
-                var fields: [N]Type.EnumField = undefined;
+                var en_fields: [N]Type.EnumField = undefined;
                 var types: [N]type = undefined;
-                @memset(&fields, Type.EnumField{
-                    .name = "",
-                    .value = 0,
-                });
 
-                for (0.., Options.components, &types) |i, c, *t| {
-                    fields[i] = Type.EnumField{
+                for (0.., Options.components, &types, &en_fields) |i, c, *t, *enfld| {
+                    enfld.* = Type.EnumField{
                         .name = c.@"0",
                         .value = i,
                     };
                     t.* = c.@"1";
                 }
 
-                break :blk .{ @Type(Type{ .@"enum" = .{
-                    .tag_type = u32,
-                    .fields = &fields,
-                    .decls = &[_]Type.Declaration{},
-                    .is_exhaustive = true,
-                } }), types };
+                const Enum =
+                    @Type(Type{ .@"enum" = .{
+                        .tag_type = u32,
+                        .fields = &en_fields,
+                        .decls = &[_]Type.Declaration{},
+                        .is_exhaustive = true,
+                    } });
+
+                break :blk .{ Enum, types };
             };
 
             break :cmp_man struct {
@@ -493,6 +515,7 @@ pub fn Ecs(
                 /// Each array corresponds with the components in the order they were passed
                 arrays: [N][Options.max_entities]?*anyopaque,
                 const Error = error{ InvalidType, OutOfMemory };
+
                 inline fn tagType(which: Tag) type {
                     return TypeArr[@intFromEnum(which)];
                 }
@@ -579,6 +602,82 @@ pub fn Ecs(
             };
         };
 
+        /// Returns the function by which `Entity`s are compared according to a `Query`'s rule
+        /// Helper struct for easily managing any components associated with an entity
+        const EntityHandle = struct {
+            ecs: *ThisEcs,
+            identifier: Entity,
+
+            /// Is `null` if the entity has been removed
+            /// This is a little weird, I feel like the handle should be invalidated if index doesn't exist somehow
+            /// In other words, a state where this returns `null` should ideally be impossible
+            pub fn index(self: @This()) ?usize {
+                return self.ecs.entities.manager.index_map.get(self.identifier);
+            }
+
+            /// Maybe not the best name?
+            /// Removes this entity from the ecs
+            /// moves component data to match up indices of the outer components array with the index of the entity
+            pub fn destroy(self: @This()) !void {
+                const idx = self.index() orelse return error.NoIndex;
+                // Before removing the entity, we clear it's component data
+                {
+                    const sig = self.ecs.entities.manager.getData(self.identifier) orelse @panic("No entity signature?");
+                    var bit_idx_iter = sig.iterator(.{});
+                    while (bit_idx_iter.next()) |i| {
+                        const comp_enum: ComponentsTag = @enumFromInt(i);
+                        self.ecs.components.removeNoReturn(comp_enum, idx);
+                    }
+                }
+
+                const last_registered_opt = self.ecs.entities.manager.lastRegistered();
+
+                try self.ecs.entities.manager.remove(self.ecs.allocator, self.identifier);
+
+                // Removing the entity will move the last inserted entity
+                // We need to update the component data for this moved entity
+                {
+                    if (last_registered_opt) |last| {
+                        const prev_idx_of_moved_ent = last.@"1";
+                        // NOTE:
+                        // The index we pass here is the *same* index of the removed entity
+                        // because the `remove` method moves the last inserted entity into the index of the removed entity
+                        const ent = self.ecs.entities.manager.identifier_map.get(idx) orelse @panic("No identifier at that index?");
+                        if (last.@"0" != ent) {
+                            std.debug.panic(
+                                \\ Expected last entity inserted to match gotten entity
+                                \\ Expected: {}
+                                \\ Got: {}
+                            , .{ last.@"0", ent });
+                        }
+                        const sig = self.ecs.entities.manager.getData(ent) orelse @panic("No entity signature?");
+                        var bit_idx_iter = sig.iterator(.{});
+                        while (bit_idx_iter.next()) |i| {
+                            const comp_enum: ComponentsTag = @enumFromInt(i);
+                            self.ecs.components.swap(comp_enum, prev_idx_of_moved_ent, idx);
+                        }
+                    }
+                }
+            }
+
+            pub fn removeComponent(self: *@This(), which: ComponentsTag, component: anytype) !void {
+                const idx = self.index() orelse @panic("NO INDEX?");
+                var sig = self.ecs.entities.manager.data[idx];
+                sig.unset(@intFromEnum(which));
+                self.ecs.components.removeWithReturn(@TypeOf(component), which, idx) orelse return error.ComponentRemovalFailure;
+            }
+
+            pub fn addComponent(self: *@This(), which: ComponentsTag, component: anytype) !void {
+                const idx = self.index() orelse @panic("NO INDEX?");
+                var sig = self.ecs.entities.manager.data[idx] orelse @panic("NO DATA?");
+                std.log.debug("sig: {b}\n", .{sig.mask});
+                sig.set(@intFromEnum(which));
+                std.log.debug("changed sig: {b}\n", .{sig.mask});
+                self.ecs.entities.manager.data[idx] = sig;
+                try self.ecs.components.insert(self.ecs.allocator, which, idx, component);
+            }
+        };
+
         const EntityManager = struct {
             manager: IdentifierManager(Options.max_entities, Signature),
 
@@ -599,82 +698,6 @@ pub fn Ecs(
                     .identifier = id,
                 };
             }
-
-            /// Returns the function by which `Entity`s are compared according to a `Query`'s rule
-            /// Helper struct for easily managing any components associated with an entity
-            const EntityHandle = struct {
-                ecs: *ThisEcs,
-                identifier: Entity,
-
-                /// Is `null` if the entity has been removed
-                /// This is a little weird, I feel like the handle should be invalidated if index doesn't exist somehow
-                /// In other words, a state where this returns `null` should ideally be impossible
-                pub fn index(self: @This()) ?usize {
-                    return self.ecs.entities.manager.index_map.get(self.identifier);
-                }
-
-                /// Maybe not the best name?
-                /// Removes this entity from the ecs
-                /// moves component data to match up indices of the outer components array with the index of the entity
-                pub fn destroy(self: @This()) !void {
-                    const idx = self.index() orelse return error.NoIndex;
-                    // Before removing the entity, we clear it's component data
-                    {
-                        const sig = self.ecs.entities.manager.getData(self.identifier) orelse @panic("No entity signature?");
-                        var bit_idx_iter = sig.iterator(.{});
-                        while (bit_idx_iter.next()) |i| {
-                            const comp_enum: ComponentsTag = @enumFromInt(i);
-                            self.ecs.components.removeNoReturn(comp_enum, idx);
-                        }
-                    }
-
-                    const last_registered_opt = self.ecs.entities.manager.lastRegistered();
-
-                    try self.ecs.entities.manager.remove(self.ecs.allocator, self.identifier);
-
-                    // Removing the entity will move the last inserted entity
-                    // We need to update the component data for this moved entity
-                    {
-                        if (last_registered_opt) |last| {
-                            const prev_idx_of_moved_ent = last.@"1";
-                            // NOTE:
-                            // The index we pass here is the *same* index of the removed entity
-                            // because the `remove` method moves the last inserted entity into the index of the removed entity
-                            const ent = self.ecs.entities.manager.identifier_map.get(idx) orelse @panic("No identifier at that index?");
-                            if (last.@"0" != ent) {
-                                std.debug.panic(
-                                    \\ Expected last entity inserted to match gotten entity
-                                    \\ Expected: {}
-                                    \\ Got: {}
-                                , .{ last.@"0", ent });
-                            }
-                            const sig = self.ecs.entities.manager.getData(ent) orelse @panic("No entity signature?");
-                            var bit_idx_iter = sig.iterator(.{});
-                            while (bit_idx_iter.next()) |i| {
-                                const comp_enum: ComponentsTag = @enumFromInt(i);
-                                self.ecs.components.swap(comp_enum, prev_idx_of_moved_ent, idx);
-                            }
-                        }
-                    }
-                }
-
-                pub fn removeComponent(self: *@This(), which: ComponentsTag, component: anytype) !void {
-                    const idx = self.index() orelse @panic("NO INDEX?");
-                    var sig = self.ecs.entities.manager.data[idx];
-                    sig.unset(@intFromEnum(which));
-                    self.ecs.components.removeWithReturn(@TypeOf(component), which, idx) orelse return error.ComponentRemovalFailure;
-                }
-
-                pub fn addComponent(self: *@This(), which: ComponentsTag, component: anytype) !void {
-                    const idx = self.index() orelse @panic("NO INDEX?");
-                    var sig = self.ecs.entities.manager.data[idx] orelse @panic("NO DATA?");
-                    std.log.debug("sig: {b}\n", .{sig.mask});
-                    sig.set(@intFromEnum(which));
-                    std.log.debug("changed sig: {b}\n", .{sig.mask});
-                    self.ecs.entities.manager.data[idx] = sig;
-                    try self.ecs.components.insert(self.ecs.allocator, which, idx, component);
-                }
-            };
         };
     };
 }
@@ -699,7 +722,7 @@ test "ECS Entity Management" {
         .max_entities = 5,
         .max_systems = 5,
         .State = State,
-        .components = &[_]Component{
+        .components = &[_]ComponentDecl{
             .{ "somecomponent", bool },
             .{ "othercomponent", u8 },
             .{ "someothercomponent", u32 },
@@ -710,7 +733,7 @@ test "ECS Entity Management" {
 
     // Entity Initialization
     // ---
-    const entity_a: MyEcs.EntityManager.EntityHandle = a: {
+    const entity_a: MyEcs.EntityHandle = a: {
         var handle = try ecs.entities.register();
         const someother: u32 = 5;
         try handle.addComponent(MyEcs.ComponentsTag.someothercomponent, someother);
@@ -719,7 +742,7 @@ test "ECS Entity Management" {
         break :a handle;
     };
 
-    const entity_b: MyEcs.EntityManager.EntityHandle = a: {
+    const entity_b: MyEcs.EntityHandle = a: {
         var handle = try ecs.entities.register();
         const someother: u32 = 7;
         try handle.addComponent(MyEcs.ComponentsTag.someothercomponent, someother);
@@ -728,7 +751,7 @@ test "ECS Entity Management" {
         break :a handle;
     };
 
-    var entity_c: MyEcs.EntityManager.EntityHandle = a: {
+    var entity_c: MyEcs.EntityHandle = a: {
         const handle = try ecs.entities.register();
         break :a handle;
     };
@@ -769,8 +792,19 @@ test "ECS Entity Management" {
     const matching = try ecs.queryEntities(arena.allocator(), query) orelse @panic("NOTHING MATCHING");
 
     std.log.debug("got matching: {any}\n", .{matching});
-    try std.testing.expect(std.mem.containsAtLeastScalar(Entity, matching.query, 1, entity_a.identifier));
-    try std.testing.expect(std.mem.containsAtLeastScalar(Entity, matching.query, 1, entity_b.identifier));
+
+    const containsEntityWithId = struct {
+        fn contains(qu: []MyEcs.EntityHandle, id: Entity) bool {
+            for (qu) |handle| {
+                if (handle.identifier == id) {
+                    return true;
+                }
+            }
+            return false;
+        }
+    }.contains;
+    try std.testing.expect(containsEntityWithId(matching.query, entity_a.identifier));
+    try std.testing.expect(containsEntityWithId(matching.query, entity_b.identifier));
 
     // Component Removal
     // ---
@@ -802,60 +836,28 @@ test "ECS Entity Management" {
 
     // Systems
     // ---
-    const SomeSystem = MyEcs.System{
-        .queries = &[_]MyEcs.Query{.{ .query = .{
-            .is = MyEcs.QueryStatement.new(.at_least, &[_]MyEcs.ComponentsTag{.someothercomponent}),
-        } }},
-        .schedule = .automatic,
-        .runFn = struct {
-            fn run(results: []MyEcs.QueryResult, myecs: *MyEcs, state: *State) void {
-                _ = state;
-                warn("IN SOME SYSTEM\n", .{});
-                for (results) |r| {
-                    for (r.query) |e| {
-                        warn("MUTATING ENTITY: {}", .{e});
-                        const idx = myecs.entities.manager.index_map.get(e) orelse @panic("ENTITY SHOULD HAVE AN INDEX?");
-                        const v = myecs.components.access(u32, .someothercomponent, idx) orelse @panic("SHOULD HAVE THIS COMPONENT?");
-                        warn("VAL: {}", .{v.*});
-                        const new: u32 = 1111;
-                        myecs.components.insert(myecs.allocator, .someothercomponent, idx, new) catch @panic("FAILED TO INSERT COMPONENT");
-                    }
-                    // v.* = @as(u32, 1111);
+    const some_system = try MyEcs.System.init(ecs.allocator, struct {
+        call_count: u32,
+        fn run(self: *@This(), results: []MyEcs.QueryResult, myecs: *MyEcs, state: *State) anyerror!void {
+            _ = state;
+            warn("IN SOME SYSTEM\n", .{});
+            self.call_count += 1;
+            for (results) |r| {
+                for (r.query) |e| {
+                    warn("MUTATING ENTITY: {}", .{e});
+                    const idx = e.index() orelse @panic("ENTITY SHOULD HAVE AN INDEX?");
+                    const v = myecs.components.access(u32, .someothercomponent, idx) orelse @panic("SHOULD HAVE THIS COMPONENT?");
+                    warn("VAL: {}", .{v.*});
+                    const new: u32 = 1111;
+                    myecs.components.insert(myecs.allocator, .someothercomponent, idx, new) catch @panic("FAILED TO INSERT COMPONENT");
                 }
             }
-        }.run,
-    };
-    // const OtherSystem = MyEcs.System{
-    //     .queries = &[_]MyEcs.Query{.{ .query = .{ .is = statement: {
-    //         var s = MyEcs.QueryStatement.new(.at_least, &[_]MyEcs.ComponentsTag{.othercomponent});
-    //         try s.withValidation(u8, struct {
-    //             fn isValid(v: u8) bool {
-    //                 return v == 64;
-    //             }
-    //         }.isValid);
-    //         break :statement s;
-    //     } } }},
-    //     .schedule = .automatic,
-    //     .runFn = struct {
-    //         fn run(results: []MyEcs.QueryResult, myecs: *MyEcs, state: *State) void {
-    //             _ = state;
-    //             warn("IN OTHER SYSTEM\n", .{});
-    //             for (results) |r| {
-    //                 for (r.query) |e| {
-    //                     warn("MUTATING ENTITY: {}", .{e});
-    //                     const idx = myecs.entities.manager.index_map.get(e) orelse @panic("ENTITY SHOULD HAVE AN INDEX?");
-    //                     const v = myecs.components.access(u8, .othercomponent, idx) orelse @panic("SHOULD HAVE THIS COMPONENT?");
-    //                     warn("VAL: {}", .{v.*});
-    //                     const new: u8 = 49;
-    //                     myecs.components.insert(myecs.allocator, .othercomponent, idx, new) catch @panic("FAILED TO INSERT COMPONENT");
-    //                 }
-    //             }
-    //         }
-    //     }.run,
-    // };
+        }
+    }, .{ .call_count = 0 }, .automatic, &[_]MyEcs.Query{.{ .query = .{
+        .is = MyEcs.QueryStatement.new(.at_least, &[_]MyEcs.ComponentsTag{.someothercomponent}),
+    } }});
 
-    _ = try ecs.systems.register(SomeSystem);
-    // _ = try ecs.systems.register(OtherSystem);
+    _ = try ecs.systems.register(some_system);
 
     var state = State{};
     try ecs.runSystems(&state);

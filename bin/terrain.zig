@@ -68,12 +68,12 @@ fn initState(allocator: std.mem.Allocator, ecs: *Ecs) !game.state.GameState {
     };
 
     var handle = try ecs.entities.register();
-    try handle.addComponent(.camera, camera);
+    try handle.addComponent(.camera3D, camera);
     // const sys_id, _ = try ecs.systems.register(game.cameras.ORBITAL_CAMERA_SYSTEM);
 
-    var cameras = std.ArrayList(game.state.CameraReference).init(allocator);
-    try cameras.append(game.state.CameraReference{
-        .camera_id = handle.identifier,
+    var cameras = std.ArrayList(game.state.EcsCameraReference).init(allocator);
+    try cameras.append(game.state.EcsCameraReference{
+        .id = handle.identifier,
         // .system_id = sys_id,
     });
 
@@ -90,29 +90,72 @@ fn initState(allocator: std.mem.Allocator, ecs: *Ecs) !game.state.GameState {
     return state;
 }
 
-pub fn MeshManipulation(mesh_id: engine.ecs.Entity) Ecs.System {
+// fn MeshNoiseImageSystem(mesh_id: engine.Entity, image_id: engine.Entity) type {
+//     return Ecs.System(
+//         &[_]Ecs.Query{
+//             Ecs.Query{ .id = mesh_id },
+//             Ecs.Query{ .id = image_id },
+//         },
+//         struct {
+//             scale: f32,
+//             seed: u32,
+//             size: i32,
+//             color: rl.Color = rl.color.Black,
+
+//             fn createNoiseImage(self: @This()) !rl.Image {
+//                 var img = rl.Image.genColor(self.size, self.size, self.color);
+//                 engine.noise.genPerlinNoise(&img, self.seed, self.scale);
+
+//                 return img;
+//             }
+
+//             fn run(self: *@This(), results: []Ecs.QueryResult, ecs: *Ecs, state: *game.state.GameState) anyerror!void {
+//                 const mesh_entity = results[0].id;
+//                 const image_entity = results[1].id;
+
+//                 const mesh = ecs.components.access(engine.MaterialMesh, .material_mesh, mesh_entity.index()) orelse return error.NoMeshEntity;
+//                 const image = ecs.components.access(rl.Image, .image, image_entity.index()) orelse return error.NoImageEntity;
+//                 if (rl.isKeyPressed(rl.KeyboardKey.r)) {
+//                     // seed = rng.random().int(u32);
+//                     image.* = self.createNoiseImage();
+//                     // texture = try image.toTexture();
+//                     mesh = try engine.terrain.genMaskedImageMesh(self.allocator, image, mask, 2);
+//                 }
+//             }
+//         },
+//     );
+// }
+
+pub fn MeshMirrorNoiseImage(mesh: engine.ecs.Entity) Ecs.System {
     Ecs.System{
         .queries = &[_]Ecs.Query{
-            Ecs.Query{ .id = mesh_id },
+            Ecs.Query{ .id = mesh },
         },
         .runFn = struct {
+
+            // const  last_scale ;
             fn run(results: []Ecs.QueryResult, myecs: *Ecs, state: *game.state.GameState) void {
+                _ = state;
                 const e = results[0].query[0];
                 const idx = myecs.entities.manager.index_map.get(e) orelse @panic("NO IDX?");
                 std.log.warn("Got idx: {d}\n", .{idx});
                 const bundle = myecs.components.access(engine.MaterialMesh, .bundle, idx) orelse @panic("NO BUNDLE?");
                 _ = bundle;
-                // bundle.meshes.items[0] =
+
+                if (rl.isKeyPressed(rl.KeyboardKey.r) or last_scale != scale) {
+                    // seed = rng.random().int(u32);
+                    image = noise.createNoiseImage(seed, size, scale);
+                    texture = try image.toTexture();
+                    // mesh = try engine.terrain.genMaskedImageMesh(arena.allocator(), image, mesh_size, mask, 2);
+                }
+                // const new_mesh = try engine.terrain.genMaskedImageMesh(myecs.allocator, image, mesh_size, mask, 2);
+
+                // For now this is just a magic number
+                // BAD!!
+                // bundle.meshes.items[0] = new_mesh;
             }
         }.run,
     };
-}
-
-fn createNoiseImage(seed: u32, size: i32, scale: f32) !rl.Image {
-    var img = rl.Image.genColor(size, size, rl.Color.black);
-    engine.noise.genPerlinNoise(&img, seed, scale);
-
-    return img;
 }
 
 pub fn main() !void {
@@ -138,11 +181,13 @@ pub fn main() !void {
         try std.posix.getrandom(std.mem.asBytes(&seed));
         break :blk seed;
     });
-    const size: i32 = 512;
-    const seed = rng.random().int(u32);
-    var scale: f32 = 0.009;
-    var last_scale = scale;
-    var image = try createNoiseImage(seed, size, scale);
+    var noise = NoiseOptions{
+        .size = 512,
+        .seed = rng.random().int(u32),
+        .scale = 0.009,
+    };
+    // var last_scale = scale;
+    var image = try noise.createNoiseImage();
     // const render_tex = try rl.RenderTexture2D.init(size, size);
 
     const mask = &[_]rl.Vector2{
@@ -215,12 +260,6 @@ pub fn main() !void {
     while (!rl.windowShouldClose()) {
         try ecs.runSystems(&state);
         try state.update(&ecs);
-        if (rl.isKeyPressed(rl.KeyboardKey.r) or last_scale != scale) {
-            // seed = rng.random().int(u32);
-            image = try createNoiseImage(seed, size, scale);
-            texture = try image.toTexture();
-            mesh = try engine.terrain.genMaskedImageMesh(arena.allocator(), image, mesh_size, mask, 2);
-        }
 
         rl.beginDrawing();
         defer rl.endDrawing();

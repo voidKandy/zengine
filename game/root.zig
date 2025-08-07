@@ -17,24 +17,24 @@ const CAMERAS: usize = 8;
 
 pub const MAX_MESHES_PER_ENTITY: usize = 10;
 
+/// this might belong in engine module??
 pub const Ecs = engine.ecs.Ecs(engine.ecs.EcsOptions{
     .max_entities = MAX_N_ENTITIES,
     .max_systems = MAX_N_SYSTEMS,
     .State = state.GameState,
-    .components = &[_]engine.ecs.Component{
-        .{ "bundle", engine.MaterialMesh },
-        .{ "camera", rl.Camera3D },
-        .{ "ui", rl.Camera3D },
+    .components = &[_]engine.ecs.ComponentDecl{
+        .{ "material_mesh", engine.MaterialMesh },
+        .{ "impulse", struct {
+            position: rl.Vector3,
+            target: rl.Vector3,
+        } },
+        // Have the world component have a system where it can be influenced
+        //  to make things happen with the terrain
+        .{ "world", world.IslandCurve },
+        .{ "camera3D", rl.Camera3D },
+        // .{ "ui", rl.Camera3D },
         .{ "transform", rl.Matrix },
         .{ "shape", zbt.Shape },
-        // SHOULD ONLY BE ONE ENTITY
-        // .{ "camera_track", bool },
-        // Should also only be one entity
-        // .{ "impulse_point", struct { position: rl.Vector3, direction: rl.Vector3 } },
-        // .{ "mass", f32 },
-        // Body can be gotten by querying the physics engine
-        // Instead of storing the rigidbody, we store the index of the body in the physics engine
-        // .{ "rigidbody", zbt.Body },
         .{ "body", i32 },
     },
 });

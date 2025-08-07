@@ -6,6 +6,11 @@ const game = @import("root.zig");
 const engine = @import("engine_core");
 const Ecs = game.Ecs;
 
+// bad name for this.
+// This interracts with the object_impulse field of state to facilitate
+// 1. forcing the camera to follow an entity
+// 2. allowing the user to apply impulses on that object
+// This is essentially the movement system
 pub fn CameraTrackingSystem(camera_id: engine.ecs.Entity) Ecs.System {
     Ecs.System{
         .queries = &[_]Ecs.Query{
@@ -76,7 +81,7 @@ pub fn CameraTrackingSystem(camera_id: engine.ecs.Entity) Ecs.System {
                 // const camera = state.scene.currentCamera().?.camera;
                 const idx = myecs.entities.manager.index_map.get(followed_entity).?;
 
-                const bundle = myecs.components.access(engine.MeshBundle, .bundle, idx) orelse @panic("NO BUNDLE??");
+                const bundle = myecs.components.access(engine.MaterialMesh, .bundle, idx) orelse @panic("NO BUNDLE??");
                 const body_id = myecs.components.access(i32, .body, idx) orelse @panic("NO BODY??");
                 const transform = bundle.transform;
                 orbitTransformation(state, transform);
@@ -243,7 +248,7 @@ pub const SyncPhysicsSystem = Ecs.System{
             std.log.warn("IN SYNC SYSTEM\n", .{});
             for (results[0].query) |e| {
                 const idx = myecs.entities.manager.index_map.get(e).?;
-                const bundle = myecs.components.access(engine.MeshBundle, .bundle, idx) orelse {
+                const bundle = myecs.components.access(engine.MaterialMesh, .bundle, idx) orelse {
                     std.log.warn(
                         \\ Entity does not have bundle???
                         \\
