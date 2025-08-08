@@ -24,6 +24,10 @@ pub const Ecs = engine.ecs.Ecs(engine.ecs.EcsOptions{
     .State = state.GameState,
     .components = &[_]engine.ecs.ComponentDecl{
         .{ "material_mesh", engine.MaterialMesh },
+        .{ "noise", engine.noise.Noise },
+        // .{ "draw_order", u32 },
+        // change this to be like materialmesh?
+        .{ "image", engine.ImageBundle },
         .{ "impulse", struct {
             position: rl.Vector3,
             target: rl.Vector3,

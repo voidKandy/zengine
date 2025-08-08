@@ -63,119 +63,120 @@ pub const GameState = struct {
         // self.pick.p2p.dealloc();
     }
 
-    pub fn update(self: *@This(), ecs: *game.Ecs) !void {
-        const cam_ref = self.currentCamera() orelse @panic("NO CAMERA??");
-        std.log.warn(
-            \\ GOT CAM REF: {any}
-            \\
-        , .{cam_ref});
-        if (cam_ref.system_id) |sys_id| {
-            const sys = ecs.systems.getData(sys_id) orelse {
-                std.log.warn(
-                    \\ NO SYSTEM WITH ID: {d}
-                    \\
-                , .{sys_id});
-                @panic("");
-            };
-            std.log.warn(
-                \\ RUNNING CAMERA SYSTEM
-            , .{});
-            try ecs.runSystem(self, sys);
-        }
-    }
-    pub fn draw(self: @This(), ecs: *game.Ecs) !void {
+    // pub fn update(self: *@This(), ecs: *game.Ecs) !void {
+    //     const cam_ref = self.currentCamera() orelse @panic("NO CAMERA??");
+    //     std.log.warn(
+    //         \\ GOT CAM REF: {any}
+    //         \\
+    //     , .{cam_ref});
+    //     if (cam_ref.system_id) |sys_id| {
+    //         const sys = ecs.systems.getData(sys_id) orelse {
+    //             std.log.warn(
+    //                 \\ NO SYSTEM WITH ID: {d}
+    //                 \\
+    //             , .{sys_id});
+    //             @panic("");
+    //         };
+    //         std.log.warn(
+    //             \\ RUNNING CAMERA SYSTEM
+    //         , .{});
+    //         try ecs.runSystem(self, sys);
+    //     }
+    // }
 
-        // First, camera stuff
-        const cam_ref = self.currentCamera() orelse @panic("NO CURRENT CAMERA!!");
-        const camera_bundle = cam: {
-            const idx = ecs.entities.manager.index_map.get(cam_ref.id) orelse @panic("NO CAMERA??");
-            break :cam ecs.components.access(rl.Camera3D, .camera3D, idx) orelse @panic("NO CAMERA BUNDLE?");
-        };
+    // I really dont like that this is in the state module let alone game
+    // pub fn draw(self: @This(), ecs: *game.Ecs) !void {
 
-        rl.beginMode3D(camera_bundle.*);
-        defer rl.endMode3D();
+    //     // First, camera stuff
+    //     const cam_ref = self.currentCamera() orelse @panic("NO CURRENT CAMERA!!");
+    //     const camera_bundle = cam: {
+    //         const idx = ecs.entities.manager.index_map.get(cam_ref.id) orelse @panic("NO CAMERA??");
+    //         break :cam ecs.components.access(rl.Camera3D, .camera3D, idx) orelse @panic("NO CAMERA BUNDLE?");
+    //     };
 
-        // Once the camera system has been run, we query for `MaterialMesh`s
-        const bundle_sig = s: {
-            var s = game.Ecs.Signature.initEmpty();
-            s.set(@intFromEnum(game.Ecs.ComponentsTag.material_mesh));
-            break :s s;
-        };
+    //     rl.beginMode3D(camera_bundle.*);
+    //     defer rl.endMode3D();
 
-        // if (self.island_curve) |curve| {
-        //     std.log.warn(
-        //         \\ Drawing world
-        //     , .{});
+    //     const bundle_sig = s: {
+    //         var s = game.Ecs.Signature.initEmpty();
+    //         s.set(@intFromEnum(game.Ecs.ComponentsTag.material_mesh));
+    //         break :s s;
+    //     };
 
-        //     // For drawing the world boundaries in debug mode
-        //     const box_center = rl.Vector3.init(
-        //         (game.world.BOX_MIN + game.world.BOX_MAX) / 2.0,
-        //         (game.world.BOX_MIN + game.world.BOX_MAX) / 2.0,
-        //         (game.world.BOX_MIN + game.world.BOX_MAX) / 2.0,
-        //     );
-        //     const box_size = rl.Vector3.init(
-        //         game.world.BOX_MAX - game.world.BOX_MIN,
-        //         game.world.BOX_MAX - game.world.BOX_MIN,
-        //         game.world.BOX_MAX - game.world.BOX_MIN,
-        //     );
+    //     // if (self.island_curve) |curve| {
+    //     //     std.log.warn(
+    //     //         \\ Drawing world
+    //     //     , .{});
 
-        //     curve.curve.draw();
-        //     for (curve.meshes) |mesh| {
-        //         mesh.draw();
-        //         // mesh.@"1".draw(material: Material, )
-        //     }
-        //     // for (world.polygons) |p| {
-        //     //     p.draw();
-        //     // }
-        //     if (curve.debug_mode)
-        //         rl.drawCubeWires(box_center, box_size.x, box_size.y, box_size.z, rl.Color.light_gray);
-        // }
+    //     //     // For drawing the world boundaries in debug mode
+    //     //     const box_center = rl.Vector3.init(
+    //     //         (game.world.BOX_MIN + game.world.BOX_MAX) / 2.0,
+    //     //         (game.world.BOX_MIN + game.world.BOX_MAX) / 2.0,
+    //     //         (game.world.BOX_MIN + game.world.BOX_MAX) / 2.0,
+    //     //     );
+    //     //     const box_size = rl.Vector3.init(
+    //     //         game.world.BOX_MAX - game.world.BOX_MIN,
+    //     //         game.world.BOX_MAX - game.world.BOX_MIN,
+    //     //         game.world.BOX_MAX - game.world.BOX_MIN,
+    //     //     );
 
-        const bundle_query_result =
-            try ecs.queryEntities(ecs.allocator, game.Ecs.Query{ .query = .{ .is = game.Ecs.QueryStatement{ .rule = .at_least, .sig = bundle_sig } } });
+    //     //     curve.curve.draw();
+    //     //     for (curve.meshes) |mesh| {
+    //     //         mesh.draw();
+    //     //         // mesh.@"1".draw(material: Material, )
+    //     //     }
+    //     //     // for (world.polygons) |p| {
+    //     //     //     p.draw();
+    //     //     // }
+    //     //     if (curve.debug_mode)
+    //     //         rl.drawCubeWires(box_center, box_size.x, box_size.y, box_size.z, rl.Color.light_gray);
+    //     // }
 
-        if (bundle_query_result) |bundle_entities| {
-            // we draw any entities with a bundle
-            for (bundle_entities.query) |handle| {
-                const idx = handle.index() orelse std.debug.panic("Entity: {} Has no index?\n", .{handle});
-                const bundle = ecs.components.access(engine.MaterialMesh, .material_mesh, idx).?;
-                bundle.draw();
-            }
-        }
+    //     const bundle_query_result =
+    //         try ecs.queryEntities(ecs.allocator, game.Ecs.Query{ .query = .{ .is = game.Ecs.QueryStatement{ .rule = .at_least, .sig = bundle_sig } } });
 
-        // draw the impulse line
-        // if (self.object_impulse) |impulse| {
-        //     rl.drawText("Press [P] to push the object", 50, 50, 10, rl.Color.green);
-        //     rl.drawCube(impulse.position, 0.1, 0.1, 0.1, rl.Color.ray_white);
-        //     rl.drawLine3D(impulse.position, impulse.target, rl.Color.red);
-        // }
+    //     if (bundle_query_result) |bundle_entities| {
+    //         // we draw any entities with a bundle
+    //         for (bundle_entities.query) |handle| {
+    //             const idx = handle.index() orelse std.debug.panic("Entity: {} Has no index?\n", .{handle});
+    //             const bundle = ecs.components.access(engine.MaterialMesh, .material_mesh, idx).?;
+    //             bundle.draw();
+    //         }
+    //     }
 
-        // if (self.upward_face) |face| {
-        //     const text = try std.fmt.allocPrintZ(ecs.allocator, "Upward face: {}", .{face});
-        //     rl.drawText(text, 100, 100, 10, rl.Color.green);
-        // }
+    //     // draw the impulse line
+    //     // if (self.object_impulse) |impulse| {
+    //     //     rl.drawText("Press [P] to push the object", 50, 50, 10, rl.Color.green);
+    //     //     rl.drawCube(impulse.position, 0.1, 0.1, 0.1, rl.Color.ray_white);
+    //     //     rl.drawLine3D(impulse.position, impulse.target, rl.Color.red);
+    //     // }
 
-        // draw a grid just cuz
-        rl.drawGrid(200, 5.0);
+    //     // if (self.upward_face) |face| {
+    //     //     const text = try std.fmt.allocPrintZ(ecs.allocator, "Upward face: {}", .{face});
+    //     //     rl.drawText(text, 100, 100, 10, rl.Color.green);
+    //     // }
 
-        // draw physics debug lines
-        if (self.physics) |phys| {
-            const lines = phys.debug.lines.items;
-            var i: usize = 0;
-            while (i + 1 < lines.len) : (i += 2) {
-                const start = rl.Vector3{
-                    .x = lines[i].position[0],
-                    .y = lines[i].position[1],
-                    .z = lines[i].position[2],
-                };
-                const end = rl.Vector3{
-                    .x = lines[i + 1].position[0],
-                    .y = lines[i + 1].position[1],
-                    .z = lines[i + 1].position[2],
-                };
-                // const color = lines[i].color;
-                rl.drawLine3D(start, end, rl.Color.ray_white);
-            }
-        }
-    }
+    //     // draw a grid just cuz
+    //     rl.drawGrid(200, 5.0);
+
+    //     // draw physics debug lines
+    //     if (self.physics) |phys| {
+    //         const lines = phys.debug.lines.items;
+    //         var i: usize = 0;
+    //         while (i + 1 < lines.len) : (i += 2) {
+    //             const start = rl.Vector3{
+    //                 .x = lines[i].position[0],
+    //                 .y = lines[i].position[1],
+    //                 .z = lines[i].position[2],
+    //             };
+    //             const end = rl.Vector3{
+    //                 .x = lines[i + 1].position[0],
+    //                 .y = lines[i + 1].position[1],
+    //                 .z = lines[i + 1].position[2],
+    //             };
+    //             // const color = lines[i].color;
+    //             rl.drawLine3D(start, end, rl.Color.ray_white);
+    //         }
+    //     }
+    // }
 };

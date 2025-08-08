@@ -1,5 +1,37 @@
 const std = @import("std");
 const rl = @import("raylib");
+const engine = @import("root.zig");
+
+pub const Noise = struct {
+    scale: f32,
+    seed: u32,
+    size: i32,
+    color: rl.Color = rl.Color.black,
+
+    pub fn createNoiseImage(self: @This()) !rl.Image {
+        var img = rl.Image.genColor(self.size, self.size, self.color);
+        self.drawPerlinNoiseToImage(&img);
+
+        return img;
+    }
+
+    pub fn drawPerlinNoiseToImage(self: @This(), img: *rl.Image) void {
+        std.debug.assert(img.width == img.height);
+        const size: usize = @intCast(img.width);
+
+        // First, generate a random gradient vector in the range [-1 , 1)
+        for (0..size) |y| {
+            for (0..size) |x| {
+                const xf = @as(f32, @floatFromInt(x)) * self.scale;
+                const yf = @as(f32, @floatFromInt(y)) * self.scale;
+                const v = perlinSample(xf, yf, self.seed); // [-1,1]
+                const normalized = v * 0.5 + 0.5; // map to [0,1]
+                const c: u8 = @intFromFloat(255.0 * normalized);
+                img.drawPixel(@intCast(x), @intCast(y), rl.Color.init(c, c, c, 255));
+            }
+        }
+    }
+};
 
 /// `mu` - *mean* of the distribution
 /// `sigma` - *standard deviation* of the distribution
@@ -91,21 +123,4 @@ pub fn perlinSample(x: f32, y: f32, seed: u32) f32 {
     const value = interpolate(ix0, ix1, sy);
 
     return value;
-}
-
-pub fn genPerlinNoise(img: *rl.Image, seed: u32, scale: f32) void {
-    std.debug.assert(img.width == img.height);
-    const size: usize = @intCast(img.width);
-
-    // First, generate a random gradient vector in the range [-1 , 1)
-    for (0..size) |y| {
-        for (0..size) |x| {
-            const xf = @as(f32, @floatFromInt(x)) * scale;
-            const yf = @as(f32, @floatFromInt(y)) * scale;
-            const v = perlinSample(xf, yf, seed); // [-1,1]
-            const normalized = v * 0.5 + 0.5; // map to [0,1]
-            const c: u8 = @intFromFloat(255.0 * normalized);
-            img.drawPixel(@intCast(x), @intCast(y), rl.Color.init(c, c, c, 255));
-        }
-    }
 }

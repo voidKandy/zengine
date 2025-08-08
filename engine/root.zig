@@ -5,7 +5,7 @@ pub const terrain = @import("terrain.zig");
 pub const util = @import("util.zig");
 pub const noise = @import("noise.zig");
 pub const MaterialMesh = @import("MaterialMesh.zig");
-pub const SampledTerrain = @import("SampledTerrain.zig");
+pub const ImageBundle = @import("ImageBundle.zig");
 const Type = std.builtin.Type;
 pub const Entity = ecs.Entity;
 

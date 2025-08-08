@@ -6,6 +6,144 @@ const game = @import("root.zig");
 const engine = @import("engine_core");
 const Ecs = game.Ecs;
 
+pub const DrawSystem = struct {
+    const matmesh_query =
+        Ecs.Query{
+            .query = .{ .is = Ecs.QueryStatement{
+                .rule = .at_least,
+                .sig = Ecs.componentSignature(.material_mesh),
+            } },
+        };
+    const image_query =
+        Ecs.Query{
+            .query = .{ .is = Ecs.QueryStatement{
+                .rule = .at_least,
+                .sig = Ecs.componentSignature(.image),
+            } },
+        };
+
+    /// Currently NO draw order, this should likely be implemented down the line as things are simplyh drawn as they are accessd
+    /// which is basically random
+    /// `ImageBundles` are *always* drawn *before* anything 3D as of right now
+    /// FOR NOW:
+    /// `rl.endDrawing()` **MUST** be called after running systems
+    pub fn run(_: *@This(), myecs: *Ecs, state: *Ecs.State) anyerror!void {
+        rl.beginDrawing();
+        defer rl.endDrawing();
+        rl.clearBackground(rl.Color.black);
+
+        render2D: {
+            if (try myecs.queryEntities(image_query)) |*entities| {
+                for (entities.query) |*ent| {
+                    const img = try ent.accessComponent(engine.ImageBundle, .image);
+                    try img.draw();
+                }
+            }
+            break :render2D;
+        }
+
+        render3D: {
+            const cam_ref = state.currentCamera() orelse @panic("NO CURRENT CAMERA!!");
+            const camera3D: *rl.Camera3D = cam: {
+                var handle = myecs.entityHandle(cam_ref.id);
+                break :cam handle.accessComponent(rl.Camera3D, .camera3D) catch @panic("NO CAMERA BUNDLE?");
+            };
+            rl.beginMode3D(camera3D.*);
+            defer rl.endMode3D();
+
+            if (try myecs.queryEntities(matmesh_query)) |*entities| {
+                for (entities.query) |*ent| {
+                    const mat_mesh = try ent.accessComponent(engine.MaterialMesh, .material_mesh);
+                    mat_mesh.draw();
+                }
+            }
+            // draw a grid just cuz
+            rl.drawGrid(200, 5.0);
+
+            // draw physics debug lines
+            if (state.physics) |phys| {
+                const lines = phys.debug.lines.items;
+                var i: usize = 0;
+                while (i + 1 < lines.len) : (i += 2) {
+                    const start = rl.Vector3{
+                        .x = lines[i].position[0],
+                        .y = lines[i].position[1],
+                        .z = lines[i].position[2],
+                    };
+                    const end = rl.Vector3{
+                        .x = lines[i + 1].position[0],
+                        .y = lines[i + 1].position[1],
+                        .z = lines[i + 1].position[2],
+                    };
+                    // const color = lines[i].color;
+                    rl.drawLine3D(start, end, rl.Color.ray_white);
+                }
+            }
+            break :render3D;
+        }
+    }
+};
+
+const RenderNoiseSystem = struct {
+    changed: bool = false,
+    noise: engine.noise.Noise,
+    mesh: engine.Entity,
+    texture: engine.Entity,
+    /// Static for now, maybe should be a field?
+    /// Idk it feels like this is the wrong place to do this?
+    const MASK = &[_]rl.Vector2{
+        .{ .x = 0.5, .y = 0.5 },
+        .{ .x = -0.5, .y = 0.5 },
+        // .{ .x = -0.7, .y = 0.0 },
+        .{ .x = -0.5, .y = -0.5 },
+        .{ .x = 0.5, .y = -0.5 },
+        .{ .x = 0.5, .y = 0.5 },
+    };
+
+    const MESH_SIZE =
+        rl.Vector3.init(16.0, 8.0, 16.0);
+
+    pub fn start(self: *@This(), ecs: *Ecs, _: *game.state.GameState) anyerror!void {
+        const image = try self.noise.createNoiseImage();
+        const mesh = try engine.terrain.genMaskedImageMesh(ecs.allocator, image, MESH_SIZE, MASK, 2);
+        var material = try rl.loadMaterialDefault();
+        // material.maps[0].color = rl.Color.ray_white;
+        const texture = try rl.loadTextureFromImage(image);
+        material.maps[0].texture = texture;
+        // defer rl.unloadTexture(texture);
+
+        var mat_mesh_position = rl.Matrix.identity();
+        mat_mesh_position.m12 = -8.0;
+        mat_mesh_position.m14 = -8.0;
+        var mat_mesh =
+            engine.MaterialMesh.init(ecs.allocator, mat_mesh_position);
+        const idx = try mat_mesh.add_material(material);
+        try mat_mesh.add_mesh(mesh, idx);
+        var entity = try ecs.entities.register();
+
+        try entity.addComponent(.material_mesh, mat_mesh);
+        try entity.addComponent(.image, image);
+    }
+
+    pub fn run(self: *@This(), results: []Ecs.QueryResult, myecs: *Ecs, state: *game.state.GameState) void {
+        const mesh: *rl.Mesh = m: {
+            const ent = myecs.entityHandle(self.mesh);
+            break :m try ent.accessComponent(engine.MaterialMesh, .material_mesh);
+        };
+        const texture: *rl.RenderTexture2D = m: {
+            const ent = myecs.entityHandle(self.texture);
+            break :m try ent.accessComponent(rl.RenderTexture2D, .image);
+        };
+
+        if (rl.isKeyPressed(rl.KeyboardKey.r) or self.changed) {
+            self.noise.drawPerlinNoiseToImage(texture);
+            mesh.* = try engine.terrain.genMaskedImageMesh(self.allocator, texture, MASK, 2);
+        }
+
+        _ = results;
+        _ = state;
+    }
+};
 // bad name for this.
 // This interracts with the object_impulse field of state to facilitate
 // 1. forcing the camera to follow an entity

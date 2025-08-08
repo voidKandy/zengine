@@ -29,6 +29,7 @@ fn IdentifierManager(
         index_map: std.AutoHashMap(Identifier, usize),
         identifier_map: std.AutoHashMap(usize, Identifier),
         count: usize,
+        /// Maintains a *tightly packed* array of Data
         data: [MAX]?Data = blk: {
             var all: [MAX]?Data = undefined;
             @memset(&all, null);
@@ -168,6 +169,7 @@ pub const Entity = u32;
 pub const EcsOptions = struct {
     max_entities: usize,
     max_systems: usize,
+    /// Starting to feel fishy
     State: type,
     components: []const ComponentDecl,
     // systems: []type,
@@ -185,71 +187,9 @@ pub fn Ecs(
         pub const State = Options.State;
         pub const Opts = Options;
 
-        /// Archetypes can easily be expressed through signatures:
-        /// ```zig
-        /// var archetype = Signature.initZeros();
-        /// archetype.set(@intFromEnum(ComponentsTag.mycomponent));
-        /// archetype.set(@intFromEnum(ComponentsTag.othercomponent));
-        /// ```
-        pub const Signature = std.bit_set.IntegerBitSet(@intCast(Options.components.len));
-        /// enum that has a variant for each component in the ecs
-        pub const ComponentsTag = ComponentsManager.Tag;
-        /// struct that has a field for each component in the ecs
-        /// Systems tagged `automatic` will be run always, during the `runSystems` function
-        /// Systems tagged `explicit` will only run if they are run somehow in user space
-        pub const SysSchedule = enum {
-            automatic,
-            explicit,
-            fn isAuto(self: @This()) bool {
-                return @intFromEnum(self) == @intFromEnum(@This().automatic);
-            }
-        };
-
-        /// If `ECS` finds no enities matching `queries`, the system will not run
-        /// If `queries` field is null, the system will run regardless
-        pub const System = struct {
-            disabled: bool = false,
-            schedule: SysSchedule,
-            queries: ?[]const Query,
-            inner: *anyopaque,
-            runFn: *const fn (*anyopaque, []QueryResult, *ThisEcs, *Options.State) anyerror!void,
-
-            /// **Requirements** for type passed as `T`:
-            /// **PUBLIC** `run` function that has the signature:
-            ///  `const fn (@This(), []QueryResult, *ThisEcs, *Options.State) anyerror!void`
-            pub fn init(allocator: Allocator, T: type, v: T, schedule: SysSchedule, queries: ?[]const Query) Allocator.Error!*@This() {
-                const system = try allocator.create(@This());
-                const inner = try allocator.create(T);
-                inner.* = v;
-
-                system.* = @This(){
-                    .schedule = schedule,
-                    .inner = @ptrCast(inner),
-                    .queries = queries,
-                    .runFn = struct {
-                        fn run(val: *anyopaque, r: []QueryResult, ecs: *ThisEcs, state: *Options.State) anyerror!void {
-                            const val_as_type: *T = @ptrCast(@alignCast(val));
-                            return T.run(val_as_type, r, ecs, state);
-                        }
-                    }.run,
-                };
-                return system;
-            }
-
-            pub fn deinit(self: *@This(), allocator: Allocator) void {
-                allocator.free(self.inner);
-                allocator.free(self);
-            }
-        };
-
-        const SystemManager = IdentifierManager(Options.max_systems, *System);
-
         /// this is an allocator returned by `ArenaAllocator.allocator()`
         allocator: Allocator,
         entities: EntityManager,
-        /// Systems are currently run sequentially before draw calls
-        /// * less than ideal * ?
-        /// `System` struct are given pre-filtered entities
         systems: SystemManager,
         components: ComponentsManager,
 
@@ -262,71 +202,153 @@ pub fn Ecs(
                 .components = ComponentsManager.init(),
             };
         }
-
         pub fn deinit(self: *ThisEcs) void {
             self.entities.manager.deinit(self.allocator);
-            self.systems.deinit(self.allocator);
+            self.systems.deinit();
             self.components.deinit(self.allocator);
         }
 
-        pub fn runSystem(self: *ThisEcs, state: *ThisEcs.State, system: *System) !void {
-            const results = queries: {
-                var all: [Options.max_entities]QueryResult = undefined;
-                var amt: usize = 0;
+        /// Archetypes can easily be expressed through signatures:
+        /// ```zig
+        /// var archetype = Signature.initZeros();
+        /// archetype.set(@intFromEnum(ComponentTag.mycomponent));
+        /// archetype.set(@intFromEnum(ComponentTag.othercomponent));
+        /// ```
+        pub const Signature = std.bit_set.IntegerBitSet(@intCast(Options.components.len));
 
-                if (system.queries) |qs| {
-                    for (qs) |q| {
-                        if (try self.queryEntities(self.allocator, q)) |result| {
-                            all[amt] = result;
-                            amt += 1;
-                        }
-                    }
+        /// If `ECS` finds no enities matching `queries`, the system will not run
+        /// If `queries` field is null, the system will run regardless
+        const System = struct {
+            disabled: bool = false,
+            // schedule: SysSchedule,
+            inner: *anyopaque,
+            runFn: *const fn (*anyopaque, *ThisEcs, *Options.State) anyerror!void,
+            startFn: ?*const fn (*anyopaque, *ThisEcs, *Options.State) anyerror!void,
+        };
+
+        /// Maps to fields of system manager.
+        /// > Idk this was the quickest way to implement, I'm sure there's a better way
+        pub const SysSchedule = enum {
+            pre_render,
+            render,
+            post_render,
+        };
+
+        const SystemManager = struct {
+            all: IdentifierManager(Options.max_systems, *System),
+            schedules: std.AutoHashMap(SysSchedule, std.AutoHashMap(u32, void)),
+            // render: IdentifierManager(Options.max_systems, *System),
+            // post_render: IdentifierManager(Options.max_systems, *System),
+            fn init(allocator: Allocator) !@This() {
+                return .{
+                    .all = try IdentifierManager(Options.max_systems, *System).init(allocator),
+                    .schedules = std.AutoHashMap(SysSchedule, std.AutoHashMap(u32, void)).init(allocator),
+                };
+            }
+            fn deinit(self: *@This()) void {
+                defer self.schedules.deinit();
+                var iter =
+                    self.schedules.iterator();
+                while (iter.next()) |entry| {
+                    entry.value_ptr.*.deinit();
                 }
+            }
+        };
 
-                break :queries all[0..amt];
+        /// **Requirements** for type passed as `T`:
+        ///  `pub fn run(*@This(),  *ThisEcs, *Options.State) anyerror!void`
+        ///  Optionally:
+        /// `pub fn start(*@This(), *ThisEcs, *Options.State) anyerror!void`
+        pub fn initSystem(
+            self: ThisEcs,
+            T: type,
+            v: T,
+        ) Allocator.Error!*System {
+            const system = try self.allocator.create(System);
+            const inner = try self.allocator.create(T);
+            inner.* = v;
+            const startFunc = null;
+
+            if (std.meta.hasFn(T, "start")) {
+                startFunc = struct {
+                    fn start(val: *anyopaque, ecs: *ThisEcs, state: *Options.State) anyerror!void {
+                        const val_as_type: *T = @ptrCast(@alignCast(val));
+                        return T.start(val_as_type, ecs, state);
+                    }
+                }.start;
+            }
+
+            system.* = System{
+                // .schedule = schedule,
+                .inner = @ptrCast(inner),
+                .runFn = struct {
+                    fn run(val: *anyopaque, ecs: *ThisEcs, state: *Options.State) anyerror!void {
+                        const val_as_type: *T = @ptrCast(@alignCast(val));
+                        return T.run(val_as_type, ecs, state);
+                    }
+                }.run,
+                .startFn = startFunc,
             };
+            return system;
+        }
 
-            const should_run = results.len > 0 or system.queries == null;
-
-            if (should_run) {
-                std.log.warn(
-                    \\
-                    \\ Got Entities Matching: {any}
-                , .{results});
-                try system.runFn(system.inner, results, self, state);
+        pub fn registerSystem(self: *@This(), system: *System, schedule: SysSchedule) !struct { u32, usize } {
+            const registered = try self.systems.all.register(system);
+            const result = try self.systems.schedules.getOrPut(schedule);
+            if (!result.found_existing) {
+                var set = std.AutoHashMap(u32, void).init(self.allocator);
+                try set.put(registered.@"0", {});
+                result.value_ptr.* = set;
             } else {
-                std.log.warn(
-                    \\
-                    \\ No Entities Matching
-                , .{});
+                try result.value_ptr.*.put(registered.@"0", {});
+            }
+            return registered;
+        }
+
+        /// Should be run right when drawing mode begins, before the update loop
+        /// should take schedule into account
+        pub fn startSytems(self: *ThisEcs, state: *ThisEcs.State) anyerror!void {
+            var iter =
+                self.systems.all.identifier_map.valueIterator();
+            while (iter.next()) |id| {
+                const system = self.systems.all.getData(id.*) orelse return error.NoData;
+                const func = system.startFn orelse continue;
+                try func(system, self, state);
             }
         }
 
         pub fn runSystems(self: *ThisEcs, state: *ThisEcs.State) !void {
-            std.log.warn(
-                \\
-                \\ Running Systems
-            , .{});
-            var systems_iter =
-                self.systems.identifier_map.valueIterator();
-            while (systems_iter.next()) |id| {
-                const system = self.systems.getData(id.*) orelse return error.NoData;
-                if (system.disabled or !system.schedule.isAuto()) continue;
-                try self.runSystem(state, system);
+            for (&[_]SysSchedule{
+                .pre_render,
+                .render,
+                .post_render,
+            }) |schedule| {
+                const schedule_set =
+                    self.systems.schedules.get(schedule);
+                if (schedule_set) |set| {
+                    var sys_id_iter = set.keyIterator();
+                    while (sys_id_iter.next()) |id| {
+                        const system = self.systems.all.getData(id.*) orelse return error.NoData;
+                        if (system.disabled) continue;
+                        try system.runFn(system.inner, self, state);
+                    }
+                }
             }
         }
 
         pub fn entityHandle(self: *ThisEcs, entity: Entity) EntityHandle {
-            return EntityHandle{ .ecs = self, .identifier = entity };
+            var sig =
+                self.entities.manager.getData(entity) orelse @panic("ENTITY WITH NO SIGNATURE??");
+            return EntityHandle{ .ecs = self, .identifier = entity, .signature = &sig };
         }
         /// Returns the signature associated with the given component
-        pub fn componentSignature(tag: ComponentsTag) Signature {
+        pub fn componentSignature(tag: ComponentTag) Signature {
             var sig = Signature.initEmpty();
             sig.set(@intFromEnum(tag));
             return sig;
         }
         /// Returns the signature associated with the given component
-        pub fn componentsSignature(tags: []ComponentsTag) Signature {
+        pub fn componentsSignature(tags: []ComponentTag) Signature {
             var sig = Signature.initEmpty();
             for (tags) |c| {
                 sig.set(@intFromEnum(c));
@@ -335,8 +357,8 @@ pub fn Ecs(
         }
 
         /// Returns the signature associated with the given components
-        pub inline fn signatureComponents(signature: Signature) []ComponentsTag {
-            var all: [Options.components.len]ComponentsTag = undefined;
+        pub inline fn signatureComponents(signature: Signature) []ComponentTag {
+            var all: [Options.components.len]ComponentTag = undefined;
             var amt: usize = 0;
             for (0..Signature.bit_length, &all) |i, *tag| {
                 if (signature.isSet(i)) {
@@ -346,19 +368,19 @@ pub fn Ecs(
             }
             return &all;
         }
-        pub inline fn componentType(variant: ComponentsTag) type {
+        pub inline fn componentType(variant: ComponentTag) type {
             const idx = @intFromEnum(variant);
             return Options.components[idx].@"1";
         }
 
-        pub fn queryEntities(self: *ThisEcs, allocator: std.mem.Allocator, query: Query) !?QueryResult {
+        pub fn queryEntities(self: *ThisEcs, query: Query) !?QueryResult {
             std.log.warn(
                 \\
                 \\ Running Query {any}
                 \\
             , .{query});
 
-            var all = std.ArrayList(ThisEcs.EntityHandle).init(allocator);
+            var all = std.ArrayList(ThisEcs.EntityHandle).init(self.allocator);
             // First, we get a result based purely on which type/tag the entity matches
             get_entities: {
                 switch (query) {
@@ -464,7 +486,7 @@ pub fn Ecs(
             rule: QueryRule,
             sig: Signature,
             // component_rules: ?[]const ComponentRule = null,
-            pub fn new(rule: QueryRule, components: []const ComponentsTag) @This() {
+            pub fn new(rule: QueryRule, components: []const ComponentTag) @This() {
                 return .{ .rule = rule, .sig = componentsSignature(@constCast(components)) };
             }
         };
@@ -482,131 +504,140 @@ pub fn Ecs(
 
         pub const QueryResult = union(QueryType) { id: ThisEcs.EntityHandle, query: []ThisEcs.EntityHandle };
 
-        pub const ComponentRule =
-            struct { ComponentsTag, *anyopaque };
-        const ComponentsManager = cmp_man: {
-            const N = Options.components.len;
-            const ComponentTag: type, const TypeArr: [N]type = blk: {
-                var en_fields: [N]Type.EnumField = undefined;
-                var types: [N]type = undefined;
+        const N = Options.components.len;
 
-                for (0.., Options.components, &types, &en_fields) |i, c, *t, *enfld| {
-                    enfld.* = Type.EnumField{
-                        .name = c.@"0",
-                        .value = i,
-                    };
-                    t.* = c.@"1";
-                }
+        const meta_structure: struct { [N]Type.EnumField, [N]Type.StructField, [N]type } = blk: {
+            var en_fields: [N]Type.EnumField = undefined;
+            var st_fields: [N]Type.StructField = undefined;
+            var types: [N]type = undefined;
 
-                const Enum =
-                    @Type(Type{ .@"enum" = .{
-                        .tag_type = u32,
-                        .fields = &en_fields,
-                        .decls = &[_]Type.Declaration{},
-                        .is_exhaustive = true,
-                    } });
+            for (0.., Options.components, &types, &en_fields, &st_fields) |i, c, *t, *enfld, *stfld| {
+                enfld.* = Type.EnumField{
+                    .name = c.@"0",
+                    .value = i,
+                };
+                stfld.* = Type.StructField{
+                    .name = c.@"0",
+                    .type = c.@"1",
+                    .default_value_ptr = null,
+                    .is_comptime = false,
+                    .alignment = @alignOf(c.@"1"),
+                };
+                t.* = c.@"1";
+            }
+            break :blk .{ en_fields, st_fields, types };
+        };
 
-                break :blk .{ Enum, types };
-            };
+        pub const ComponentTag =
+            @Type(Type{ .@"enum" = .{
+                .tag_type = u32,
+                .fields = &meta_structure.@"0",
+                .decls = &[_]Type.Declaration{},
+                .is_exhaustive = true,
+            } });
+        pub const ComponentPlexe =
+            @Type(Type{ .@"struct" = .{
+                .fields = &meta_structure.@"1",
+                .decls = &[_]Type.Declaration{},
+            } });
+        pub const TypeArr = meta_structure.@"2";
 
-            break :cmp_man struct {
-                pub const Tag = ComponentTag;
-                pub const Types = TypeArr;
-                /// Each array corresponds with the components in the order they were passed
-                arrays: [N][Options.max_entities]?*anyopaque,
-                const Error = error{ InvalidType, OutOfMemory };
+        const ComponentsManager = struct {
+            //         pub const Types = types;
+            //         /// Each array corresponds with the components in the order they were passed
+            arrays: [N][Options.max_entities]?*anyopaque,
+            const Error = error{ InvalidType, OutOfMemory };
 
-                inline fn tagType(which: Tag) type {
-                    return TypeArr[@intFromEnum(which)];
-                }
+            inline fn tagType(which: ComponentTag) type {
+                return TypeArr[@intFromEnum(which)];
+            }
+            pub fn init() @This() {
+                return @This(){ .arrays = arr: {
+                    var arr: [N][Options.max_entities]?*anyopaque = undefined;
+                    @memset(&arr, inner: {
+                        var a: [Options.max_entities]?*anyopaque = undefined;
+                        @memset(&a, null);
+                        break :inner a;
+                    });
+                    break :arr arr;
+                } };
+            }
 
-                pub fn init() @This() {
-                    return @This(){ .arrays = arr: {
-                        var arr: [N][Options.max_entities]?*anyopaque = undefined;
-                        @memset(&arr, inner: {
-                            var a: [Options.max_entities]?*anyopaque = undefined;
-                            @memset(&a, null);
-                            break :inner a;
-                        });
-                        break :arr arr;
-                    } };
-                }
-
-                /// **Must** be called with allocator used to insert values
-                pub fn deinit(
-                    self: @This(),
-                    allocator: Allocator,
-                ) void {
-                    inline for (self.arrays, 0..) |subarr, i| {
-                        for (subarr) |opt| {
-                            if (opt) |v| {
-                                const typed = @as(*TypeArr[i], @alignCast(@ptrCast(v)));
-                                allocator.destroy(typed);
-                            }
+            /// **Must** be called with allocator used to insert values
+            pub fn deinit(
+                self: @This(),
+                allocator: Allocator,
+            ) void {
+                inline for (self.arrays, 0..) |subarr, i| {
+                    for (subarr) |opt| {
+                        if (opt) |v| {
+                            const typed = @as(*TypeArr[i], @alignCast(@ptrCast(v)));
+                            allocator.destroy(typed);
                         }
                     }
                 }
+            }
 
-                /// expects to be passed `T` for `component`
-                /// **NEVER** use multiple allocators for a single instance
-                pub fn insert(self: *@This(), allocator: Allocator, which: Tag, idx: usize, component: anytype) Error!void {
-                    switch (@typeInfo(@TypeOf(component))) {
-                        .pointer => {
-                            std.log.err(
-                                \\ Cannot Pass Pointer types to this function
-                                \\
-                            , .{});
-                            return error.InvalidType;
-                        },
-                        else => {},
+            /// expects to be passed `T` for `component`
+            /// **NEVER** use multiple allocators for a single instance
+            pub fn insert(self: *@This(), allocator: Allocator, which: ComponentTag, idx: usize, component: anytype) Error!void {
+                switch (@typeInfo(@TypeOf(component))) {
+                    .pointer => {
+                        std.log.err(
+                            \\ Cannot Pass Pointer types to this function
+                            \\
+                        , .{});
+                        return error.InvalidType;
+                    },
+                    else => {},
+                }
+                inline for (TypeArr, 0..) |T, i| {
+                    if (i == @intFromEnum(which) and @TypeOf(component) == T) {
+                        const val_ptr = try allocator.create(T);
+                        val_ptr.* = component;
+                        self.arrays[@intFromEnum(which)][idx] = val_ptr;
+                        return;
                     }
-                    inline for (TypeArr, 0..) |T, i| {
-                        if (i == @intFromEnum(which) and @TypeOf(component) == T) {
-                            const val_ptr = try allocator.create(T);
-                            val_ptr.* = component;
-                            self.arrays[@intFromEnum(which)][idx] = val_ptr;
-                            return;
-                        }
-                    }
-                    return error.InvalidType;
                 }
+                return error.InvalidType;
+            }
 
-                /// moves component at `idx` to `to_idx`
-                /// Nullifies data that was previously at `to_idx`
-                fn swap(self: *@This(), which: Tag, idx: usize, to_idx: usize) void {
-                    var arr = self.arrays[@intFromEnum(which)];
-                    const tmp = arr[idx];
-                    arr[to_idx] = tmp;
-                    arr[idx] = null;
-                    self.arrays[@intFromEnum(which)] = arr;
-                }
+            /// moves component at `idx` to `to_idx`
+            /// Nullifies data that was previously at `to_idx`
+            fn swap(self: *@This(), which: ComponentTag, idx: usize, to_idx: usize) void {
+                var arr = self.arrays[@intFromEnum(which)];
+                const tmp = arr[idx];
+                arr[to_idx] = tmp;
+                arr[idx] = null;
+                self.arrays[@intFromEnum(which)] = arr;
+            }
 
-                pub fn removeNoReturn(self: *@This(), which: Tag, idx: usize) void {
-                    self.arrays[@intFromEnum(which)][idx] = null;
-                    return;
-                }
+            pub fn removeNoReturn(self: *@This(), which: ComponentTag, idx: usize) void {
+                self.arrays[@intFromEnum(which)][idx] = null;
+                return;
+            }
 
-                pub fn removeWithReturn(self: *@This(), T: type, which: Tag, idx: usize) ?*T {
-                    const val = self.arrays[@intFromEnum(which)][idx];
-                    self.removeNoReturn(which, idx);
-                    return @alignCast(@ptrCast(val));
-                }
+            pub fn removeWithReturn(self: *@This(), T: type, which: ComponentTag, idx: usize) ?*T {
+                const val = self.arrays[@intFromEnum(which)][idx];
+                self.removeNoReturn(which, idx);
+                return @alignCast(@ptrCast(val));
+            }
 
-                pub fn access(self: *@This(), T: type, which: Tag, idx: usize) ?*T {
-                    const ptr = self.arrays[@intFromEnum(which)][idx] orelse return null;
-                    if (@intFromPtr(ptr) % @alignOf(T) != 0) {
-                        @panic("Misaligned pointer access in ECS component store");
-                    }
-                    return @alignCast(@ptrCast(ptr));
+            pub fn access(self: *@This(), T: type, which: ComponentTag, idx: usize) ?*T {
+                const ptr = self.arrays[@intFromEnum(which)][idx] orelse return null;
+                if (@intFromPtr(ptr) % @alignOf(T) != 0) {
+                    @panic("Misaligned pointer access in ECS component store");
                 }
-            };
+                return @alignCast(@ptrCast(ptr));
+            }
         };
 
         /// Returns the function by which `Entity`s are compared according to a `Query`'s rule
         /// Helper struct for easily managing any components associated with an entity
-        const EntityHandle = struct {
+        pub const EntityHandle = struct {
             ecs: *ThisEcs,
             identifier: Entity,
+            signature: *Signature,
 
             /// Is `null` if the entity has been removed
             /// This is a little weird, I feel like the handle should be invalidated if index doesn't exist somehow
@@ -625,7 +656,7 @@ pub fn Ecs(
                     const sig = self.ecs.entities.manager.getData(self.identifier) orelse @panic("No entity signature?");
                     var bit_idx_iter = sig.iterator(.{});
                     while (bit_idx_iter.next()) |i| {
-                        const comp_enum: ComponentsTag = @enumFromInt(i);
+                        const comp_enum: ComponentTag = @enumFromInt(i);
                         self.ecs.components.removeNoReturn(comp_enum, idx);
                     }
                 }
@@ -653,21 +684,21 @@ pub fn Ecs(
                         const sig = self.ecs.entities.manager.getData(ent) orelse @panic("No entity signature?");
                         var bit_idx_iter = sig.iterator(.{});
                         while (bit_idx_iter.next()) |i| {
-                            const comp_enum: ComponentsTag = @enumFromInt(i);
+                            const comp_enum: ComponentTag = @enumFromInt(i);
                             self.ecs.components.swap(comp_enum, prev_idx_of_moved_ent, idx);
                         }
                     }
                 }
             }
 
-            pub fn removeComponent(self: *@This(), which: ComponentsTag, component: anytype) !void {
+            pub fn removeComponent(self: *@This(), which: ComponentTag, component: anytype) !void {
                 const idx = self.index() orelse @panic("NO INDEX?");
                 var sig = self.ecs.entities.manager.data[idx];
                 sig.unset(@intFromEnum(which));
                 self.ecs.components.removeWithReturn(@TypeOf(component), which, idx) orelse return error.ComponentRemovalFailure;
             }
 
-            pub fn addComponent(self: *@This(), which: ComponentsTag, component: anytype) !void {
+            pub fn addComponent(self: *@This(), which: ComponentTag, component: anytype) !void {
                 const idx = self.index() orelse @panic("NO INDEX?");
                 var sig = self.ecs.entities.manager.data[idx] orelse @panic("NO DATA?");
                 std.log.debug("sig: {b}\n", .{sig.mask});
@@ -675,6 +706,15 @@ pub fn Ecs(
                 std.log.debug("changed sig: {b}\n", .{sig.mask});
                 self.ecs.entities.manager.data[idx] = sig;
                 try self.ecs.components.insert(self.ecs.allocator, which, idx, component);
+            }
+            /// Thin wrapper
+            /// > idk it's nice
+            pub fn accessComponent(
+                self: *@This(),
+                T: type,
+                which: ComponentTag,
+            ) !*T {
+                return self.ecs.components.access(T, which, self.index() orelse return error.NoIndex) orelse return error.FailedComponentAccess;
             }
         };
 
@@ -688,15 +728,12 @@ pub fn Ecs(
             /// Creates an empty with an empty `Signature`
             pub fn register(self: *@This()) !EntityHandle {
                 const id, const i = try self.manager.register(Signature.initEmpty());
-                _ = i;
+                // _ = i;
                 var parent_ptr =
                     @as(*ThisEcs, @fieldParentPtr("entities", self));
                 _ = &parent_ptr;
 
-                return EntityHandle{
-                    .ecs = parent_ptr,
-                    .identifier = id,
-                };
+                return EntityHandle{ .ecs = parent_ptr, .identifier = id, .signature = &self.manager.data[i].? };
             }
         };
     };
@@ -736,18 +773,18 @@ test "ECS Entity Management" {
     const entity_a: MyEcs.EntityHandle = a: {
         var handle = try ecs.entities.register();
         const someother: u32 = 5;
-        try handle.addComponent(MyEcs.ComponentsTag.someothercomponent, someother);
+        try handle.addComponent(MyEcs.ComponentTag.someothercomponent, someother);
         const some: bool = false;
-        try handle.addComponent(MyEcs.ComponentsTag.somecomponent, some);
+        try handle.addComponent(MyEcs.ComponentTag.somecomponent, some);
         break :a handle;
     };
 
     const entity_b: MyEcs.EntityHandle = a: {
         var handle = try ecs.entities.register();
         const someother: u32 = 7;
-        try handle.addComponent(MyEcs.ComponentsTag.someothercomponent, someother);
+        try handle.addComponent(MyEcs.ComponentTag.someothercomponent, someother);
         const some: bool = true;
-        try handle.addComponent(MyEcs.ComponentsTag.somecomponent, some);
+        try handle.addComponent(MyEcs.ComponentTag.somecomponent, some);
         break :a handle;
     };
 
@@ -759,23 +796,23 @@ test "ECS Entity Management" {
     // Entity Component Validation
     // ---
     {
-        const got = ecs.components.access(u32, MyEcs.ComponentsTag.someothercomponent, entity_a.index().?) orelse @panic("Nothing at that index");
+        const got = ecs.components.access(u32, MyEcs.ComponentTag.someothercomponent, entity_a.index().?) orelse @panic("Nothing at that index");
         try std.testing.expectEqual(got.*, 5);
     }
     {
-        const got = ecs.components.access(bool, MyEcs.ComponentsTag.somecomponent, entity_a.index().?) orelse @panic("Nothing at that index");
+        const got = ecs.components.access(bool, MyEcs.ComponentTag.somecomponent, entity_a.index().?) orelse @panic("Nothing at that index");
         try std.testing.expectEqual(got.*, false);
     }
     {
-        const got = ecs.components.access(u32, MyEcs.ComponentsTag.someothercomponent, entity_b.index().?) orelse @panic("Nothing at that index");
+        const got = ecs.components.access(u32, MyEcs.ComponentTag.someothercomponent, entity_b.index().?) orelse @panic("Nothing at that index");
         try std.testing.expectEqual(got.*, 7);
     }
     {
-        const got = ecs.components.access(bool, MyEcs.ComponentsTag.somecomponent, entity_b.index().?) orelse @panic("Nothing at that index");
+        const got = ecs.components.access(bool, MyEcs.ComponentTag.somecomponent, entity_b.index().?) orelse @panic("Nothing at that index");
         try std.testing.expectEqual(got.*, true);
     }
     {
-        const got = ecs.components.access(bool, MyEcs.ComponentsTag.somecomponent, entity_c.index().?);
+        const got = ecs.components.access(bool, MyEcs.ComponentTag.somecomponent, entity_c.index().?);
         try std.testing.expect(got == null);
     }
 
@@ -784,12 +821,12 @@ test "ECS Entity Management" {
 
     const query = MyEcs.Query{ .query = .{ .is = .{ .rule = .exact, .sig = s: {
         var s = MyEcs.Signature.initEmpty();
-        s.set(@intFromEnum(MyEcs.ComponentsTag.somecomponent));
-        s.set(@intFromEnum(MyEcs.ComponentsTag.someothercomponent));
+        s.set(@intFromEnum(MyEcs.ComponentTag.somecomponent));
+        s.set(@intFromEnum(MyEcs.ComponentTag.someothercomponent));
         break :s s;
     } } } };
 
-    const matching = try ecs.queryEntities(arena.allocator(), query) orelse @panic("NOTHING MATCHING");
+    const matching = try ecs.queryEntities(query) orelse @panic("NOTHING MATCHING");
 
     std.log.debug("got matching: {any}\n", .{matching});
 
@@ -810,9 +847,9 @@ test "ECS Entity Management" {
     // ---
 
     {
-        const removed = ecs.components.removeWithReturn(bool, MyEcs.ComponentsTag.somecomponent, entity_a.index().?) orelse @panic("nothing at that index");
+        const removed = ecs.components.removeWithReturn(bool, MyEcs.ComponentTag.somecomponent, entity_a.index().?) orelse @panic("nothing at that index");
         try std.testing.expectEqual(removed.*, false);
-        try std.testing.expectEqual(null, ecs.components.access(bool, MyEcs.ComponentsTag.somecomponent, entity_a.index().?));
+        try std.testing.expectEqual(null, ecs.components.access(bool, MyEcs.ComponentTag.somecomponent, entity_a.index().?));
     }
 
     // Entity Index Storage
@@ -839,44 +876,46 @@ test "ECS Entity Management" {
     const SomeSysState =
         struct {
             call_count: u32,
-            fn run(self: *@This(), results: []MyEcs.QueryResult, myecs: *MyEcs, state: *State) anyerror!void {
+            fn run(self: *@This(), myecs: *MyEcs, state: *State) anyerror!void {
+                const q =
+                    MyEcs.Query{ .query = .{
+                        .is = MyEcs.QueryStatement.new(.at_least, &[_]MyEcs.ComponentTag{.someothercomponent}),
+                    } };
+
+                const result = try myecs.queryEntities(q);
                 _ = state;
                 warn("IN SOME SYSTEM\n", .{});
                 self.call_count += 1;
-                for (results) |r| {
-                    for (r.query) |e| {
-                        warn("MUTATING ENTITY: {}", .{e});
-                        const idx = e.index() orelse @panic("ENTITY SHOULD HAVE AN INDEX?");
-                        const v = myecs.components.access(u32, .someothercomponent, idx) orelse @panic("SHOULD HAVE THIS COMPONENT?");
-                        warn("VAL: {}", .{v.*});
-                        const new: u32 = 1111;
-                        myecs.components.insert(myecs.allocator, .someothercomponent, idx, new) catch @panic("FAILED TO INSERT COMPONENT");
-                    }
+                for (result.?.query) |e| {
+                    warn("MUTATING ENTITY: {}", .{e});
+                    const idx = e.index() orelse @panic("ENTITY SHOULD HAVE AN INDEX?");
+                    const v = myecs.components.access(u32, .someothercomponent, idx) orelse @panic("SHOULD HAVE THIS COMPONENT?");
+                    warn("VAL: {}", .{v.*});
+                    const new: u32 = 1111;
+                    myecs.components.insert(myecs.allocator, .someothercomponent, idx, new) catch @panic("FAILED TO INSERT COMPONENT");
                 }
             }
         };
-    const some_system = try MyEcs.System.init(ecs.allocator, SomeSysState, .{ .call_count = 0 }, .automatic, &[_]MyEcs.Query{.{ .query = .{
-        .is = MyEcs.QueryStatement.new(.at_least, &[_]MyEcs.ComponentsTag{.someothercomponent}),
-    } }});
-
-    _, const sys_idx = try ecs.systems.register(some_system);
+    const some_system = try ecs.initSystem(SomeSysState, .{ .call_count = 0 });
+    _, const sys_idx = try ecs.registerSystem(some_system, .pre_render);
 
     var state = State{};
     try ecs.runSystems(&state);
 
     {
-        const got = ecs.components.access(u32, MyEcs.ComponentsTag.someothercomponent, entity_b.index().?) orelse @panic("Nothing at that index");
+        const got = ecs.components.access(u32, MyEcs.ComponentTag.someothercomponent, entity_b.index().?) orelse @panic("Nothing at that index");
         try std.testing.expectEqual(
             1111,
             got.*,
         );
         try std.testing.expect(blk: {
-            const st: *SomeSysState = @ptrCast(@alignCast(ecs.systems.data[sys_idx].?.inner));
+            const st: *SomeSysState = @ptrCast(@alignCast(ecs.systems.all.data[sys_idx].?.inner));
             break :blk st.*.call_count == 1;
         });
     }
 
     std.debug.print(
         \\ ENTITY MANAGEMENT & SYSTEMS WORKS AS EXPECTED
+        \\
     , .{});
 }

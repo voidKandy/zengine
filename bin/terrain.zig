@@ -16,8 +16,7 @@ const WINDOW_HEIGHT = 600;
 const RotateMeshSystem = struct {
     mesh_id: engine.Entity,
 
-    pub fn run(self: *@This(), results: []Ecs.QueryResult, myecs: *Ecs, state: *game.state.GameState) void {
-        _ = results;
+    pub fn run(self: *@This(), myecs: *Ecs, state: *game.state.GameState) void {
         const dt = rl.getFrameTime();
         const idx = myecs.entities.manager.index_map.get(self.mesh_id) orelse @panic("NO IDX?");
         const mat_mesh = myecs.components.access(engine.MaterialMesh, .material_mesh, idx) orelse @panic("NO MAT MESH?");
@@ -76,56 +75,6 @@ fn initState(allocator: std.mem.Allocator, ecs: *Ecs) !game.state.GameState {
     return state;
 }
 
-const NoiseOptions = struct {
-    scale: f32,
-    seed: u32,
-    size: i32,
-    color: rl.Color = rl.Color.black,
-
-    fn createNoiseImage(self: @This()) !rl.Image {
-        var img = rl.Image.genColor(self.size, self.size, self.color);
-        engine.noise.genPerlinNoise(&img, self.seed, self.scale);
-
-        return img;
-    }
-};
-
-// fn MeshNoiseImageSystem(mesh_id: engine.Entity, image_id: engine.Entity) type {
-//     return Ecs.System(
-//         &[_]Ecs.Query{
-//             Ecs.Query{ .id = mesh_id },
-//             Ecs.Query{ .id = image_id },
-//         },
-//         struct {
-//             scale: f32,
-//             seed: u32,
-//             size: i32,
-//             color: rl.Color = rl.color.Black,
-
-//             fn createNoiseImage(self: @This()) !rl.Image {
-//                 var img = rl.Image.genColor(self.size, self.size, self.color);
-//                 engine.noise.genPerlinNoise(&img, self.seed, self.scale);
-
-//                 return img;
-//             }
-
-//             fn run(self: *@This(), results: []Ecs.QueryResult, ecs: *Ecs, state: *game.state.GameState) anyerror!void {
-//                 const mesh_entity = results[0].id;
-//                 const image_entity = results[1].id;
-
-//                 const mesh = ecs.components.access(engine.MaterialMesh, .material_mesh, mesh_entity.index()) orelse return error.NoMeshEntity;
-//                 const image = ecs.components.access(rl.Image, .image, image_entity.index()) orelse return error.NoImageEntity;
-//                 if (rl.isKeyPressed(rl.KeyboardKey.r)) {
-//                     // seed = rng.random().int(u32);
-//                     image.* = self.createNoiseImage();
-//                     // texture = try image.toTexture();
-//                     mesh = try engine.terrain.genMaskedImageMesh(self.allocator, image, mask, 2);
-//                 }
-//             }
-//         },
-//     );
-// }
-
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
@@ -148,7 +97,7 @@ pub fn main() !void {
         try std.posix.getrandom(std.mem.asBytes(&seed));
         break :blk seed;
     });
-    var noise = NoiseOptions{
+    var noise = engine.noise.Noise{
         .size = 512,
         .seed = rng.random().int(u32),
         .scale = 0.009,
@@ -202,58 +151,61 @@ pub fn main() !void {
         };
     }
 
-    const mesh_size =
-        rl.Vector3.init(16.0, 8.0, 16.0);
+    var mesh_id: engine.Entity = undefined;
+    {
+        const mesh_size =
+            rl.Vector3.init(16.0, 8.0, 16.0);
 
-    const mesh = try engine.terrain.genMaskedImageMesh(arena.allocator(), image, mesh_size, mask, 2);
-    // var mesh = try genMaskedImageMesh(arena.allocator(), image, mesh_size, null, 16);
+        const mesh = try engine.terrain.genMaskedImageMesh(arena.allocator(), image, mesh_size, mask, 2);
+        // var mesh = try genMaskedImageMesh(arena.allocator(), image, mesh_size, null, 16);
 
-    var material = try rl.loadMaterialDefault();
-    // material.maps[0].color = rl.Color.ray_white;
-    material.maps[0].texture = texture;
+        var material = try rl.loadMaterialDefault();
+        // material.maps[0].color = rl.Color.ray_white;
+        material.maps[0].texture = texture;
 
-    var position = rl.Matrix.identity();
-    position.m12 = -8.0;
-    position.m14 = -8.0;
+        var position = rl.Matrix.identity();
+        position.m12 = -8.0;
+        position.m14 = -8.0;
+        var mat_mesh =
+            engine.MaterialMesh.init(ecs.allocator, position);
+        const idx = try mat_mesh.add_material(material);
+        try mat_mesh.add_mesh(mesh, idx);
+        var entity = try ecs.entities.register();
 
-    var mat_mesh =
-        engine.MaterialMesh.init(ecs.allocator, position);
-    const idx = try mat_mesh.add_material(material);
-    try mat_mesh.add_mesh(mesh, idx);
-    var entity = try ecs.entities.register();
+        try entity.addComponent(.material_mesh, mat_mesh);
+        mesh_id = entity.identifier;
+    }
 
-    try entity.addComponent(.material_mesh, mat_mesh);
+    {
+        var entity = try ecs.entities.register();
+        const image_position = engine.ImageBundle.ScreenPosition{
+            .x = @as(i32, WINDOW_WIDTH - image.width - 20),
+            .y = @as(i32, 20),
+        };
+        try entity.addComponent(.image, engine.ImageBundle{
+            .position = image_position,
+            .image = image,
+        });
+    }
 
-    const rotate_system = try Ecs.System.init(ecs.allocator, RotateMeshSystem, .{ .mesh_id = entity.identifier }, .automatic, null);
-    // defer rotate_system.deinit(ecs.allocator);
-    _ = try ecs.systems.register(rotate_system);
+    const rotate_system = try ecs.initSystem(RotateMeshSystem, .{ .mesh_id = mesh_id });
+    const draw_system = try ecs.initSystem(game.systems.DrawSystem, .{});
+    _ = try ecs.registerSystem(rotate_system, .pre_render);
+    _ = try ecs.registerSystem(draw_system, .render);
+
+    try ecs.startSytems(&state);
 
     while (!rl.windowShouldClose()) {
         try ecs.runSystems(&state);
-        try state.update(&ecs);
-
-        rl.beginDrawing();
-        defer rl.endDrawing();
-        rl.clearBackground(rl.Color.black);
-
-        rl.drawTexture(texture, WINDOW_WIDTH - texture.width - 20, 20, rl.Color.white);
-        rl.drawRectangleLines(rect_x, rect_y, rect_w, rect_h, rl.Color.green);
-        try state.draw(&ecs);
-        // rl.drawTriangleFan(mask, rl.Color.red);
-
-        // rl.drawTriangleStrip(&screen_mask, rl.Color.red);
-        // rl.drawTriangleFan(&screen_mask, rl.Color.red);
-
-        // last_scale = scale;
-        _ = ui.guiSliderBar(
-            rl.Rectangle{ .x = 10, .y = 10, .width = 200, .height = 20 },
-            "Min",
-            "Max",
-            &noise.scale,
-            0.0,
-            0.1,
-        );
-        rl.drawFPS(10, 10);
+        // _ = ui.guiSliderBar(
+        //     rl.Rectangle{ .x = 10, .y = 10, .width = 200, .height = 20 },
+        //     "Min",
+        //     "Max",
+        //     &noise.scale,
+        //     0.0,
+        //     0.1,
+        // );
+        // rl.drawFPS(10, 10);
     }
 }
 
