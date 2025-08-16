@@ -45,7 +45,7 @@ pub const DrawSystem = struct {
         render3D: {
             const cam_ref = state.currentCamera() orelse @panic("NO CURRENT CAMERA!!");
             const camera3D: *rl.Camera3D = cam: {
-                var handle = myecs.entityHandle(cam_ref.id);
+                var handle = try myecs.entityHandle(cam_ref.id);
                 break :cam handle.accessComponent(rl.Camera3D, .camera3D) catch @panic("NO CAMERA BUNDLE?");
             };
             rl.beginMode3D(camera3D.*);
@@ -84,11 +84,13 @@ pub const DrawSystem = struct {
     }
 };
 
-const RenderNoiseSystem = struct {
+pub const EditNoiseSystem = struct {
     changed: bool = false,
     noise: engine.noise.Noise,
+    /// Entities are registered before being passed to the system
     mesh: engine.Entity,
-    texture: engine.Entity,
+    image: engine.Entity,
+    ui: engine.Entity,
     /// Static for now, maybe should be a field?
     /// Idk it feels like this is the wrong place to do this?
     const MASK = &[_]rl.Vector2{
@@ -103,44 +105,85 @@ const RenderNoiseSystem = struct {
     const MESH_SIZE =
         rl.Vector3.init(16.0, 8.0, 16.0);
 
-    pub fn start(self: *@This(), ecs: *Ecs, _: *game.state.GameState) anyerror!void {
+    pub fn startup(self: *@This(), ecs: *Ecs) anyerror!void {
         const image = try self.noise.createNoiseImage();
-        const mesh = try engine.terrain.genMaskedImageMesh(ecs.allocator, image, MESH_SIZE, MASK, 2);
-        var material = try rl.loadMaterialDefault();
-        // material.maps[0].color = rl.Color.ray_white;
         const texture = try rl.loadTextureFromImage(image);
-        material.maps[0].texture = texture;
-        // defer rl.unloadTexture(texture);
+        {
+            var handle = try ecs.entityHandle(self.image);
+            const img_bundle = engine.ImageBundle{
+                .position = engine.util.ScreenPosition{
+                    .x = 0,
+                    .y = 0,
+                },
+                .image = image,
+            };
+            try handle.addComponent(.image, img_bundle);
+            std.log.warn(
+                \\ Cleared image creation
+                \\
+            , .{});
+        }
+        {
+            var handle = try ecs.entityHandle(self.mesh);
 
-        var mat_mesh_position = rl.Matrix.identity();
-        mat_mesh_position.m12 = -8.0;
-        mat_mesh_position.m14 = -8.0;
-        var mat_mesh =
-            engine.MaterialMesh.init(ecs.allocator, mat_mesh_position);
-        const idx = try mat_mesh.add_material(material);
-        try mat_mesh.add_mesh(mesh, idx);
-        var entity = try ecs.entities.register();
-
-        try entity.addComponent(.material_mesh, mat_mesh);
-        try entity.addComponent(.image, image);
+            const mesh = try engine.terrain.genMaskedImageMesh(ecs.allocator, image, MESH_SIZE, MASK, 2);
+            var material = try rl.loadMaterialDefault();
+            material.maps[0].texture = texture;
+            // material.maps[0].color = rl.Color.ray_white;
+            var position = rl.Matrix.identity();
+            position.m12 = -8.0;
+            position.m14 = -8.0;
+            var mat_mesh =
+                engine.MaterialMesh.init(ecs.allocator, position);
+            const idx = try mat_mesh.addMaterial(material);
+            try mat_mesh.addMesh(mesh, idx);
+            try handle.addComponent(.material_mesh, mat_mesh);
+            std.log.warn(
+                \\ Cleared mesh creation
+                \\
+            , .{});
+        }
+        {
+            var handle = try ecs.entityHandle(self.ui);
+            const rect =
+                rl.Rectangle{ .x = 10, .y = 10, .width = 200, .height = 20 };
+            try handle.addComponent(.ui, game.UiElement{ .slider_bar = game.SliderComponent.init(.{
+                .min = 0.0,
+                .max = 1.0,
+                .val = &self.noise.scale,
+                .text_left = "Min",
+                .text_right = "Max",
+                .rect = rect,
+            }) });
+        }
     }
 
-    pub fn run(self: *@This(), results: []Ecs.QueryResult, myecs: *Ecs, state: *game.state.GameState) void {
-        const mesh: *rl.Mesh = m: {
-            const ent = myecs.entityHandle(self.mesh);
+    pub fn run(self: *@This(), myecs: *Ecs, state: *game.state.GameState) anyerror!void {
+        std.log.warn(
+            \\ INNER MESH OTEHR
+            \\ {d}
+        , .{self.mesh});
+
+        var image: *engine.ImageBundle = m: {
+            var ent = try myecs.entityHandle(self.image);
+            break :m try ent.accessComponent(engine.ImageBundle, .image);
+        };
+        const mesh: *engine.MaterialMesh = m: {
+            var ent = try myecs.entityHandle(self.mesh);
             break :m try ent.accessComponent(engine.MaterialMesh, .material_mesh);
         };
-        const texture: *rl.RenderTexture2D = m: {
-            const ent = myecs.entityHandle(self.texture);
-            break :m try ent.accessComponent(rl.RenderTexture2D, .image);
+
+        const elem: *game.UiElement = m: {
+            var ent = try myecs.entityHandle(self.ui);
+            break :m try ent.accessComponent(game.UiElement, .ui);
         };
+        _ = elem;
 
         if (rl.isKeyPressed(rl.KeyboardKey.r) or self.changed) {
-            self.noise.drawPerlinNoiseToImage(texture);
-            mesh.* = try engine.terrain.genMaskedImageMesh(self.allocator, texture, MASK, 2);
+            self.noise.drawPerlinNoiseToImage(&image.image);
+            mesh.*.meshes.items[0] = try engine.terrain.genMaskedImageMesh(myecs.allocator, image.image, MESH_SIZE, MASK, 2);
         }
 
-        _ = results;
         _ = state;
     }
 };

@@ -1,12 +1,8 @@
 const rl = @import("raylib");
+const engine = @import("root.zig");
 
-pub const ScreenPosition =
-    struct {
-        x: i32,
-        y: i32,
-    };
 /// position of the image to be rendered on the screen
-position: ScreenPosition,
+position: engine.util.ScreenPosition,
 image: rl.Image,
 
 /// For now, the image is always drawn with a raywhite color

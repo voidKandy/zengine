@@ -16,12 +16,15 @@ const WINDOW_HEIGHT = 600;
 const RotateMeshSystem = struct {
     mesh_id: engine.Entity,
 
-    pub fn run(self: *@This(), myecs: *Ecs, state: *game.state.GameState) void {
+    pub fn run(self: *@This(), myecs: *Ecs, state: *game.state.GameState) anyerror!void {
+        std.log.warn(
+            \\ INNER MESH
+            \\ {d}
+        , .{self.mesh_id});
         const dt = rl.getFrameTime();
-        const idx = myecs.entities.manager.index_map.get(self.mesh_id) orelse @panic("NO IDX?");
-        const mat_mesh = myecs.components.access(engine.MaterialMesh, .material_mesh, idx) orelse @panic("NO MAT MESH?");
+        var handle = try myecs.entityHandle(self.mesh_id);
+        const mat_mesh = try handle.accessComponent(engine.MaterialMesh, .material_mesh);
         const rotation = rl.Matrix.rotateXYZ(rl.Vector3{
-            // .x = 2.0 * dt,
             .x = 0.0,
             .y = 0.5 * dt,
             .z = 0.0,
@@ -97,103 +100,50 @@ pub fn main() !void {
         try std.posix.getrandom(std.mem.asBytes(&seed));
         break :blk seed;
     });
-    var noise = engine.noise.Noise{
+    const noise = try allocator.create(engine.noise.Noise);
+    noise.* = engine.noise.Noise{
         .size = 512,
         .seed = rng.random().int(u32),
         .scale = 0.009,
     };
-    // var last_scale = scale;
-    const image = try noise.createNoiseImage();
-    // const render_tex = try rl.RenderTexture2D.init(size, size);
 
-    const mask = &[_]rl.Vector2{
-        // .{
-        //     .x = 0.0,
-        //     .y = 0.0,
-        // },
-        .{ .x = 0.5, .y = 0.5 },
-        .{ .x = -0.5, .y = 0.5 },
-        // .{ .x = -0.7, .y = 0.0 },
-        .{ .x = -0.5, .y = -0.5 },
-        .{ .x = 0.5, .y = -0.5 },
-        .{ .x = 0.5, .y = 0.5 },
-    };
-    const texture = try rl.loadTextureFromImage(image);
-    defer rl.unloadTexture(texture);
-
-    // this is the rectangle that represents the texture to be mapped over the mask
-    const rect_w: i32 = texture.width;
-    const rect_h: i32 = texture.height;
-
-    // WINDOW_WIDTH - texture.width - 20, 20
-    const rect_x: i32 = WINDOW_WIDTH - texture.width - 20;
-    // const rect_y: i32 = WINDOW_HEIGHT / 2 - @divTrunc(rect_h, 2) - texture.width - 20;
-    const rect_y = 20;
-
-    // We need to translate the normalized mask into screen space based on the position of the rectangle defined above
-    var screen_mask: [mask.len]rl.Vector2 = undefined;
-
-    for (mask, 0..) |v, i| {
-        const rect_x_fl: f32 = @floatFromInt(rect_x);
-        const rect_y_fl: f32 = @floatFromInt(rect_y);
-        const rect_w_fl: f32 = @floatFromInt(rect_w);
-        const rect_h_fl: f32 = @floatFromInt(rect_h);
-
-        // Three steps to translating:
-        // _First_: Add 1.0 to normalized coordinates (because -1.0 and 1.0 are the lower and upper bounds of our norm space)
-        // _Second_: Divide the result of step one by 2 to renormalize w/out any negatives
-        // _Third_: Subtract the resulting Y value from 1.0 (because the Y needs to be flipped to align with raylib)
-        const translated_x = (v.x + 1.0) / 2.0;
-        const translated_y = 1.0 - ((v.y + 1.0) / 2.0);
-        screen_mask[i] = rl.Vector2{
-            .x = rect_x_fl + translated_x * rect_w_fl,
-            .y = rect_y_fl + translated_y * rect_h_fl,
-        };
-    }
-
+    // we pass this id to a few systems
     var mesh_id: engine.Entity = undefined;
     {
-        const mesh_size =
-            rl.Vector3.init(16.0, 8.0, 16.0);
-
-        const mesh = try engine.terrain.genMaskedImageMesh(arena.allocator(), image, mesh_size, mask, 2);
-        // var mesh = try genMaskedImageMesh(arena.allocator(), image, mesh_size, null, 16);
-
-        var material = try rl.loadMaterialDefault();
-        // material.maps[0].color = rl.Color.ray_white;
-        material.maps[0].texture = texture;
-
-        var position = rl.Matrix.identity();
-        position.m12 = -8.0;
-        position.m14 = -8.0;
-        var mat_mesh =
-            engine.MaterialMesh.init(ecs.allocator, position);
-        const idx = try mat_mesh.add_material(material);
-        try mat_mesh.add_mesh(mesh, idx);
-        var entity = try ecs.entities.register();
-
-        try entity.addComponent(.material_mesh, mat_mesh);
-        mesh_id = entity.identifier;
-    }
-
-    {
-        var entity = try ecs.entities.register();
-        const image_position = engine.ImageBundle.ScreenPosition{
-            .x = @as(i32, WINDOW_WIDTH - image.width - 20),
-            .y = @as(i32, 20),
+        const a, const b, const c = .{
+            try ecs.entities.register(),
+            try ecs.entities.register(),
+            try ecs.entities.register(),
         };
-        try entity.addComponent(.image, engine.ImageBundle{
-            .position = image_position,
-            .image = image,
-        });
+
+        const noise_system =
+            game.systems.EditNoiseSystem{
+                .noise = noise.*,
+                .mesh = a.identifier,
+                .image = b.identifier,
+                .ui = c.identifier,
+            };
+        mesh_id = noise_system.mesh;
+        std.log.warn(
+            \\ MESH
+            \\ {d}
+        , .{mesh_id});
+        const edit_noise_system = try Ecs.System.init(ecs.allocator, game.systems.EditNoiseSystem, noise_system);
+
+        const id, _ = try ecs.registerSystem(edit_noise_system, .pre_render);
+        try ecs.startSytem(id);
     }
 
-    const rotate_system = try ecs.initSystem(RotateMeshSystem, .{ .mesh_id = mesh_id });
-    const draw_system = try ecs.initSystem(game.systems.DrawSystem, .{});
+    std.log.warn(
+        \\ MESH
+        \\ {d}
+    , .{mesh_id});
+    const rotate_system = try Ecs.System.init(ecs.allocator, RotateMeshSystem, .{ .mesh_id = mesh_id });
     _ = try ecs.registerSystem(rotate_system, .pre_render);
+    const draw_system = try Ecs.System.init(ecs.allocator, game.systems.DrawSystem, .{});
     _ = try ecs.registerSystem(draw_system, .render);
 
-    try ecs.startSytems(&state);
+    try ecs.startSytems();
 
     while (!rl.windowShouldClose()) {
         try ecs.runSystems(&state);

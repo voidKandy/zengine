@@ -28,12 +28,12 @@ pub fn deinit(self: *Self) void {
 }
 
 /// returns the index of the material
-pub fn add_material(self: *Self, material: rl.Material) !usize {
+pub fn addMaterial(self: *Self, material: rl.Material) !usize {
     try self.materials.append(material);
     return self.materials.items.len - 1;
 }
 
-pub fn add_mesh(self: *Self, mesh: rl.Mesh, material_idx: usize) !void {
+pub fn addMesh(self: *Self, mesh: rl.Mesh, material_idx: usize) !void {
     if (self.materials.items.len < material_idx) {
         return error.InvalidMaterialIndex;
     }

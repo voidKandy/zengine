@@ -5,10 +5,20 @@ const engine = @import("root.zig");
 pub const Noise = struct {
     scale: f32,
     seed: u32,
+    /// always a square, so width == height
     size: i32,
     color: rl.Color = rl.Color.black,
 
     pub fn createNoiseImage(self: @This()) !rl.Image {
+        std.log.warn(
+            \\ NOISE
+            \\ seed: {d}
+            \\ scale: {d}
+            \\ size: {d}
+            \\ color: {any}
+            \\\ ---
+        , .{ self.seed, self.scale, self.size, self.color });
+
         var img = rl.Image.genColor(self.size, self.size, self.color);
         self.drawPerlinNoiseToImage(&img);
 
@@ -19,7 +29,6 @@ pub const Noise = struct {
         std.debug.assert(img.width == img.height);
         const size: usize = @intCast(img.width);
 
-        // First, generate a random gradient vector in the range [-1 , 1)
         for (0..size) |y| {
             for (0..size) |x| {
                 const xf = @as(f32, @floatFromInt(x)) * self.scale;

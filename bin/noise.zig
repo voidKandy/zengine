@@ -8,13 +8,6 @@ const rl = @import("raylib");
 const WINDOW_WIDTH = 800;
 const WINDOW_HEIGHT = 600;
 
-fn createNoiseImage(seed: u32, size: i32, scale: f32) !rl.Image {
-    var img = rl.Image.genColor(size, size, rl.Color.black);
-    engine.noise.genPerlinNoise(&img, seed, scale);
-
-    return img;
-}
-
 /// Create some kind of `StateObject` that has a ui presence
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};

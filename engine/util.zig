@@ -3,6 +3,12 @@ const std = @import("std");
 const zbt = @import("zbullet");
 const zm = @import("zmath");
 
+pub const ScreenPosition =
+    struct {
+        x: i32,
+        y: i32,
+    };
+
 pub fn meshToBulletShape(mesh: rl.Mesh) !zbt.TriangleMeshShape {
     var shape = zbt.initTriangleMeshShape();
     const vertex_ptr: *const anyopaque = @ptrCast(@alignCast(mesh.vertices));
